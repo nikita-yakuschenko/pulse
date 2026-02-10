@@ -1,0 +1,43 @@
+# Вставьте этот блок в ваш Supabase docker-compose.yml — заменить секцию kong.
+# Отступы: 2 пробела для ключей сервиса (container_name, image, labels...), 4 пробела для элементов списков.
+
+  kong:
+    container_name: ${CONTAINER_PREFIX}-kong
+    image: kong:2.8.1
+    restart: unless-stopped
+    # ports:
+    #   - ${KONG_HTTP_PORT}:8000/tcp
+    #   - ${KONG_HTTPS_PORT}:8443/tcp
+    expose:
+      - 8000
+      - 8443
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.supabase.rule=Host(`devmoduleteam-supabase-9a991b-155-212-147-165.traefik.me`)"
+      - "traefik.http.routers.supabase.entrypoints=websecure"
+      - "traefik.http.routers.supabase.tls=true"
+      - "traefik.http.routers.supabase.tls.certresolver=letsencrypt"
+      - "traefik.http.routers.supabase.service=kong"
+      - "traefik.http.services.kong.loadbalancer.server.port=8000"
+      - "traefik.http.routers.supabase-http.rule=Host(`devmoduleteam-supabase-9a991b-155-212-147-165.traefik.me`)"
+      - "traefik.http.routers.supabase-http.entrypoints=web"
+      - "traefik.http.routers.supabase-http.middlewares=redirect-https"
+      - "traefik.http.middlewares.redirect-https.redirectscheme.scheme=https"
+    volumes:
+      # https://github.com/supabase/supabase/issues/12661
+      - ../files/volumes/api/kong.yml:/home/kong/temp.yml:ro,z
+    depends_on:
+      analytics:
+        condition: service_healthy
+    environment:
+      KONG_DATABASE: "off"
+      KONG_DECLARATIVE_CONFIG: /home/kong/kong.yml
+      KONG_DNS_ORDER: LAST,A,CNAME
+      KONG_PLUGINS: request-transformer,cors,key-auth,acl,basic-auth
+      KONG_NGINX_PROXY_PROXY_BUFFER_SIZE: 160k
+      KONG_NGINX_PROXY_PROXY_BUFFERS: 64 160k
+      SUPABASE_ANON_KEY: ${ANON_KEY}
+      SUPABASE_SERVICE_KEY: ${SERVICE_ROLE_KEY}
+      DASHBOARD_USERNAME: ${DASHBOARD_USERNAME}
+      DASHBOARD_PASSWORD: ${DASHBOARD_PASSWORD}
+    entrypoint: bash -c 'eval "echo \"$$(cat ~/temp.yml)\"" > ~/kong.yml && /docker-entrypoint.sh kong docker-start'
