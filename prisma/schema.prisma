@@ -1,0 +1,266 @@
+// Prisma schema for Модуль.Пульс
+// Better Auth models + first phase entities
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Better Auth models
+model User {
+  id            String    @id
+  name          String
+  email         String
+  emailVerified Boolean
+  image         String?
+  createdAt     DateTime
+  updatedAt     DateTime
+  sessions      Session[]
+  accounts      Account[]
+
+  @@unique([email])
+  @@map("user")
+}
+
+model Session {
+  id        String   @id
+  expiresAt DateTime
+  token     String
+  createdAt DateTime
+  updatedAt DateTime
+  ipAddress String?
+  userAgent String?
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([token])
+  @@map("session")
+}
+
+model Account {
+  id                    String    @id
+  accountId             String
+  providerId            String
+  userId                String
+  user                  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  accessToken           String?
+  refreshToken          String?
+  idToken               String?
+  accessTokenExpiresAt  DateTime?
+  refreshTokenExpiresAt DateTime?
+  scope                 String?
+  password              String?
+  createdAt             DateTime
+  updatedAt             DateTime
+
+  @@map("account")
+}
+
+model Verification {
+  id         String    @id
+  identifier String
+  value      String
+  expiresAt  DateTime
+  createdAt  DateTime?
+  updatedAt  DateTime?
+
+  @@map("verification")
+}
+
+model MfaCode {
+  id        String   @id @default(cuid())
+  userId    String
+  code      String
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@map("mfa_code")
+}
+
+// First phase entities
+model Plan {
+  id        String   @id @default(cuid())
+  title     String
+  type      String   // production | installation
+  startDate DateTime?
+  endDate   DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("plan")
+}
+
+model Specification {
+  id        String   @id @default(cuid())
+  name      String
+  externalId String? // 1C reference
+  data      Json?    // specification content
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("specification")
+}
+
+model Balance {
+  id           String   @id @default(cuid())
+  warehouseId  String
+  itemId       String
+  quantity     Decimal
+  externalId   String?  // 1C reference
+  syncedAt     DateTime @default(now())
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("balance")
+}
+
+model Warehouse {
+  id        String   @id @default(cuid())
+  name      String
+  externalId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("warehouse")
+}
+
+model Supplier {
+  id        String   @id @default(cuid())
+  name      String
+  externalId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  sorders   Sorder[]
+
+  @@map("supplier")
+}
+
+model Sorder {
+  id         String   @id @default(cuid())
+  supplierId String
+  status     String
+  data       Json?
+  externalId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  supplier   Supplier @relation(fields: [supplierId], references: [id])
+
+  @@map("sorder")
+}
+
+model Payment {
+  id         String   @id @default(cuid())
+  status     String
+  amount     Decimal?
+  data       Json?
+  externalId String?
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@map("payment")
+}
+
+model ReorderPoint {
+  id               String   @id @default(cuid())
+  itemCode         String   // Для одиночных: код номенклатуры; для групповых: пустая строка
+  itemName         String   // Для одиночных: имя материала; для групповых: пользовательское имя
+  reorderQuantity  Decimal  // Точка заказа (минимальное количество)
+  unit             String?  // Единица измерения
+  isGroup          Boolean  @default(false) // Групповая точка заказа (несколько материалов)
+  itemCodes        Json?    // Для групповых: массив кодов материалов ["code1", "code2", ...]
+  warehouseCodes   Json?    // Коды складов для отслеживания ["code1", "code2", ...]; null = все склады (для обратной совместимости)
+  userId           String   // ID пользователя из Supabase Auth (без FK)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("reorder_point")
+}
+
+// Настройки отображения групп номенклатуры по пользователю (избранное, скрытие)
+// section: "balance" | "nomenclature" — настройки независимы для каждого раздела
+model MaterialGroupPreference {
+  id        String   @id @default(cuid())
+  userId    String   // ID пользователя (Supabase Auth)
+  groupCode String   // Код группы из дерева номенклатуры 1С
+  section   String   @default("balance") // "balance" | "nomenclature"
+  favorite  Boolean  @default(false)
+  hidden    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([userId, groupCode, section])
+  @@map("material_group_preference")
+}
+
+// Избранные материалы по пользователю (отображаются вверху списка при провале в группу)
+// section: "balance" | "nomenclature" — настройки независимы для каждого раздела
+model MaterialPreference {
+  id           String   @id @default(cuid())
+  userId       String   // ID пользователя (Supabase Auth)
+  materialCode String   // Код номенклатуры из дерева 1С
+  section      String   @default("balance") // "balance" | "nomenclature"
+  favorite     Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@unique([userId, materialCode, section])
+  @@map("material_preference")
+}
+
+// Исключения из поиска: группы верхнего уровня, которые не участвуют в поиске
+// Привязка к юзеру и разделу
+model SearchExclusion {
+  id        String   @id @default(cuid())
+  userId    String   // ID пользователя (Supabase Auth)
+  groupCode String   // Код группы верхнего уровня
+  section   String   @default("nomenclature") // "balance" | "nomenclature"
+  createdAt DateTime @default(now())
+
+  @@unique([userId, groupCode, section])
+  @@map("search_exclusion")
+}
+
+// MRP-отчёт: потребность из спецификаций + остатки → объём закупки
+model MrpReport {
+  id        String   @id @default(cuid())
+  title     String?  // Название отчёта (опционально)
+  userId    String   // ID пользователя (Supabase Auth)
+  status    String   @default("draft") // "draft" | "computed"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  specifications MrpReportSpecification[]
+  results        MrpReportResult[]
+
+  @@map("mrp_report")
+}
+
+// Спецификации, включённые в отчёт (код из 1С)
+model MrpReportSpecification {
+  id                 String    @id @default(cuid())
+  reportId           String
+  specificationCode  String    // Код спецификации в 1С
+  specificationName  String?   // Наименование для отображения
+  report             MrpReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("mrp_report_specification")
+}
+
+// Итоговая строка расчёта: потребность, остаток, к закупке (снимок на момент расчёта)
+model MrpReportResult {
+  id            String    @id @default(cuid())
+  reportId      String
+  materialCode  String
+  materialName  String
+  unit          String?
+  demandQty     Decimal   // Потребность (сумма по спецификациям)
+  balanceQty    Decimal   // Остаток на складе на момент расчёта
+  purchaseQty   Decimal   // К закупке = max(0, потребность - остаток)
+  report        MrpReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+
+  @@map("mrp_report_result")
+}
