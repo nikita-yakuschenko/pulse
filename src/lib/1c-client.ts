@@ -80,6 +80,47 @@ export function createOneCClient(credentials: OneCCredentials) {
     },
 
     /**
+     * GET с телом как ArrayBuffer (для скачивания файлов). Возвращает { data, headers }.
+     */
+    async getArrayBuffer(endpoint: string, options?: RequestInit): Promise<{ data: ArrayBuffer; headers: Headers }> {
+      const url = `${baseUrl}${endpoint}`
+      const controller = new AbortController()
+      const timeoutId = setTimeout(() => controller.abort(), ONE_C_REQUEST_TIMEOUT_MS)
+      const signal = options?.signal ?? controller.signal
+
+      try {
+        const res = await fetch(url, {
+          ...options,
+          method: "GET",
+          signal,
+          headers: {
+            "Authorization": authHeader,
+            ...options?.headers,
+          },
+        })
+        clearTimeout(timeoutId)
+
+        if (!res.ok) {
+          if (res.status === 502) {
+            throw new Error(
+              "1С не успел ответить (502). Часто это таймаут прокси при долгом ответе 1С — повторите запрос или проверьте доступность 1С."
+            )
+          }
+          throw new Error(`1С API error: ${res.status} ${res.statusText}`)
+        }
+
+        const data = await res.arrayBuffer()
+        return { data, headers: res.headers }
+      } catch (err) {
+        clearTimeout(timeoutId)
+        if (err instanceof Error && err.name === "AbortError") {
+          throw new Error("Таймаут запроса к 1С. Сервис отвечает слишком долго.")
+        }
+        throw err
+      }
+    },
+
+    /**
      * Отправляет POST-запрос к 1С API
      */
     async post<T = unknown>(endpoint: string, body: unknown, options?: RequestInit): Promise<T> {

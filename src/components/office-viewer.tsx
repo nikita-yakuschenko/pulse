@@ -54,11 +54,8 @@ export function OfficeViewer({ fileUrl, fileName, className = "" }: OfficeViewer
             experimental: false,
             trimXmlDeclaration: true,
             useBase64URL: false,
-            useMathMLPolyfill: true,
-            showChanges: false,
-            showComments: false,
-            showInserted: true,
-            showDeleted: false,
+            renderChanges: false,
+            renderComments: false,
           })
           setLoading(false)
         })

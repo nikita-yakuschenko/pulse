@@ -670,14 +670,17 @@ function SidebarMenuSubButton({
   asChild = false,
   size = "md",
   isActive = false,
+  disabled = false,
   className,
   ...props
 }: React.ComponentProps<"a"> & {
   asChild?: boolean
   size?: "sm" | "md"
   isActive?: boolean
+  disabled?: boolean
 }) {
-  const Comp = asChild ? Slot.Root : "a"
+  const Comp = asChild ? Slot.Root : disabled ? "span" : "a"
+  const spread = disabled ? { ...props, "aria-disabled": true as const } : props
 
   return (
     <Comp
@@ -693,7 +696,7 @@ function SidebarMenuSubButton({
         "group-data-[collapsible=icon]:hidden",
         className
       )}
-      {...props}
+      {...spread}
     />
   )
 }

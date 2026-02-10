@@ -255,11 +255,9 @@ export function AppSidebar({
       <SidebarFooter>
         <NavUser
           user={
-            user ?? {
-              name: "Гость",
-              email: "",
-              avatar: "",
-            }
+            user
+              ? { name: user.name, email: user.email, avatar: user.avatar ?? "" }
+              : { name: "Гость", email: "", avatar: "" }
           }
         />
       </SidebarFooter>

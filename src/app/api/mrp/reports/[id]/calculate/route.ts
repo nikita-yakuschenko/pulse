@@ -8,6 +8,7 @@ const MAIN_WAREHOUSE_CODE = "000000007"
 type TreeNode = {
   Код?: string
   Наименование?: string
+  ЕдиницаИзмерения?: string
   ЭтоГруппа?: boolean
   Дети?: TreeNode[]
   Остатки?: { Склад: string; Количество: number }[]
@@ -154,8 +155,8 @@ export async function POST(
     const demandByCode = new Map<string, { name: string; unit?: string; qty: number }>()
 
     for (const spec of specList) {
-      const data = await getSpecifications(metadata, { code: spec.specificationCode, full: true })
-      const list = Array.isArray(data) ? data : data?.data != null && Array.isArray(data.data) ? data.data : []
+      const raw = await getSpecifications(metadata, { code: spec.specificationCode, full: true }) as unknown[] | { data?: unknown[] } | null | undefined
+      const list = Array.isArray(raw) ? raw : (raw && typeof raw === "object" && Array.isArray(raw.data)) ? raw.data : []
       const one = list[0] as Record<string, unknown> | undefined
       if (!one) continue
       const materials = extractMaterials(one)

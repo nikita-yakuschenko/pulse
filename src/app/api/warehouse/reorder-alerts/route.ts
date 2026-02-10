@@ -122,7 +122,7 @@ export async function GET() {
           ? point.itemCodes
           : [point.itemCode]
       const totalQty = codes.reduce(
-        (s, c) => s + (balancesMap.get(String(c)) ?? 0),
+        (s: number, c: string | number) => s + (balancesMap.get(String(c)) ?? 0),
         0
       )
       const reorderQty = Number(point.reorderQuantity)
