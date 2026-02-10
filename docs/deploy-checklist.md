@@ -8,7 +8,9 @@
 
 ## Переменные окружения на сервере
 
-- [ ] `NEXT_PUBLIC_SUPABASE_URL` и `NEXT_PUBLIC_SUPABASE_ANON_KEY` — из панели Supabase.
+- [ ] **Сборка образа**: в Dokploy при сборке образа передать **Build Args**: `NEXT_PUBLIC_SUPABASE_URL` и `NEXT_PUBLIC_SUPABASE_ANON_KEY` (Next.js подставляет их в бандл при `npm run build`; без них middleware получит пустые значения).
+- [ ] **Рантайм**: у сервиса в Environment Variables тоже задать эти переменные (для единообразия и на случай серверного кода).
+- [ ] Значения — из панели Supabase (Project Settings → API): Project URL и Anon Key (Legacy).
 - [ ] `SUPABASE_SERVICE_ROLE_KEY` — только на сервере, не отдавать на клиент.
 - [ ] `MFA_COOKIE_SECRET` — задан в production (иначе приложение выбросит ошибку при проверке 2FA).
 - [ ] `DATABASE_URL` — для Prisma (миграции / db push), если используете.
