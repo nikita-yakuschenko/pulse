@@ -12,6 +12,7 @@ out
 build
 dist
 pencil
+tsconfig.tsbuildinfo
 
 # Debug
 npm-debug.log*
@@ -33,6 +34,9 @@ yarn-error.log*
 Thumbs.db
 
 /src/generated/prisma
+
+# Временные копии (не коммитить)
+* copy.bsl
 
 .ps1
 close-tunnel.ps1
