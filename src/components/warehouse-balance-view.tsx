@@ -380,7 +380,7 @@ export function WarehouseBalanceView() {
     if (typeof window !== "undefined") {
       const saved = localStorage.getItem(STORAGE_KEY)
       const n = saved ? Number(saved) : 17
-      return PAGE_SIZE_PRESETS.includes(n) ? String(n) : "custom"
+      return (PAGE_SIZE_PRESETS as readonly number[]).includes(n) ? String(n) : "custom"
     }
     return "17"
   })
@@ -606,7 +606,7 @@ export function WarehouseBalanceView() {
     const clamped = Math.max(1, Math.min(500, n))
     setPageSize(clamped)
     setPage(1)
-    setPageSizeSelectValue(PAGE_SIZE_PRESETS.includes(clamped) ? String(clamped) : "custom")
+    setPageSizeSelectValue((PAGE_SIZE_PRESETS as readonly number[]).includes(clamped) ? String(clamped) : "custom")
     localStorage.setItem(STORAGE_KEY, String(clamped))
   }, [])
 

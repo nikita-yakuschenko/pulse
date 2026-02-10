@@ -9,6 +9,7 @@ export default defineConfig({
     path: "prisma/migrations",
   },
   datasource: {
-    url: process.env["DATABASE_URL"],
+    // При next build DATABASE_URL может быть не задан; для db push/migrate подставьте в .env
+    url: process.env["DATABASE_URL"] ?? "postgresql://localhost:5432/pulse",
   },
 });

@@ -4,9 +4,10 @@ import { createOneCClient, getOneCCredentials } from "@/integrations/1c"
 
 export async function GET(
   request: NextRequest,
-  { params }: { params: { id: string } }
+  { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const { id: fileId } = await params
     const supabase = await createClient()
     const {
       data: { user },
@@ -39,15 +40,12 @@ export async function GET(
     }
 
     const client = createOneCClient(credentials)
-    const fileId = params.id
 
-    // Запрос к 1С API для скачивания файла
-    const response = await client.get(`payments/file/${encodeURIComponent(fileId)}`, {
-      responseType: "arraybuffer",
-    })
+    // Запрос к 1С API для скачивания файла (бинарный ответ)
+    const { data, headers } = await client.getArrayBuffer(`payments/file/${encodeURIComponent(fileId)}`)
 
     // Пытаемся извлечь имя файла из заголовков
-    const contentDisposition = response.headers["content-disposition"]
+    const contentDisposition = headers.get("content-disposition")
     let fileName = "file"
     if (contentDisposition) {
       const fileNameMatch = contentDisposition.match(/filename[^;=\n]*=((['"]).*?\2|[^;\n]*)/)
@@ -56,10 +54,10 @@ export async function GET(
       }
     }
 
-    const contentType = response.headers["content-type"] || "application/octet-stream"
+    const contentType = headers.get("content-type") || "application/octet-stream"
 
     // inline — чтобы iframe/просмотрщик мог отобразить файл; attachment заставляет скачивать и даёт белый экран
-    return new NextResponse(response.data, {
+    return new NextResponse(data, {
       status: 200,
       headers: {
         "Content-Type": contentType,
