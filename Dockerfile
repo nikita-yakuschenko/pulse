@@ -8,11 +8,7 @@ FROM node:20-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
-# Next.js подставляет NEXT_PUBLIC_* при сборке — без них в бандле пустые значения и Supabase клиент падает
-ARG NEXT_PUBLIC_SUPABASE_URL
-ARG NEXT_PUBLIC_SUPABASE_ANON_KEY
-ENV NEXT_PUBLIC_SUPABASE_URL=$NEXT_PUBLIC_SUPABASE_URL
-ENV NEXT_PUBLIC_SUPABASE_ANON_KEY=$NEXT_PUBLIC_SUPABASE_ANON_KEY
+# Next.js читает .env.production при сборке — NEXT_PUBLIC_* попадут в бандл
 RUN mkdir -p public
 RUN npm run build
 
