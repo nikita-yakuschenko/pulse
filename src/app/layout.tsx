@@ -21,6 +21,9 @@ export default function RootLayout({
 }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="ru" suppressHydrationWarning>
+      <head>
+        <meta name="apple-mobile-web-app-title" content="Пульс" />
+      </head>
       <body className={`${inter.variable} ${ibmPlexMono.variable} font-sans antialiased`} suppressHydrationWarning>
         <ThemeProvider
           attribute="class"
