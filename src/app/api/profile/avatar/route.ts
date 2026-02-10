@@ -62,8 +62,12 @@ export async function POST(request: Request) {
 
   if (uploadError) {
     console.error("Avatar upload error", uploadError)
+    const isRls = String(uploadError.message).includes("row-level security") || (uploadError as { statusCode?: string }).statusCode === "403"
+    const hint = isRls
+      ? "Выполните SQL из prisma/supabase-storage-avatars-policies.sql в Supabase → SQL Editor."
+      : "Создайте bucket «avatars» в Supabase Storage (см. docs/profile-avatars.md)."
     return NextResponse.json(
-      { error: "Не удалось загрузить фото. Создайте bucket «avatars» в Supabase Storage (см. docs/profile-avatars.md)." },
+      { error: `Не удалось загрузить фото. ${hint}` },
       { status: 500 }
     )
   }

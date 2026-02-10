@@ -39,7 +39,7 @@ export function SignupForm({
       return
     }
     const supabase = createClient()
-    const { error: err } = await supabase.auth.signUp({
+    const { data, error: err } = await supabase.auth.signUp({
       email,
       password,
       options: {
@@ -47,11 +47,21 @@ export function SignupForm({
       },
     })
     if (err) {
-      toast.error("Не удалось создать аккаунт. Проверьте введённые данные.")
-    } else {
-      router.push("/dashboard")
-      router.refresh()
+      const isSmtpError = /confirmation email|smtp|mail/i.test(err.message ?? "")
+      const message = isSmtpError
+        ? "Сервер не может отправить письмо подтверждения. Проверьте настройки SMTP в Supabase (пароль в кавычках, SMTP_ADMIN_EMAIL). Временно можно включить ENABLE_EMAIL_AUTOCONFIRM=true."
+        : (err.message || "Не удалось создать аккаунт. Проверьте введённые данные.")
+      toast.error(message)
+      return
     }
+    // Если сессии нет — включено подтверждение почты, редирект на страницу «проверьте почту»
+    if (!data.session) {
+      router.push("/check-email")
+      router.refresh()
+      return
+    }
+    router.push("/dashboard")
+    router.refresh()
   }
 
   return (
