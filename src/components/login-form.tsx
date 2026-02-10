@@ -36,6 +36,9 @@ export function LoginForm({
       password,
     })
     if (err) {
+      if (process.env.NODE_ENV === "development") {
+        console.error("[auth] signIn error:", err.message, err)
+      }
       toast.error("Не удалось войти. Проверьте введённые данные.")
     } else {
       router.push("/dashboard")
