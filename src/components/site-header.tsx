@@ -49,7 +49,7 @@ const pathToLabel: Record<string, string> = {
 const SECTIONS = {
   procurement: { label: "Закупки и снабжение", href: "/purchases/dashboard" },
   production: { label: "Производство", href: "/dashboard/plan" },
-  construction: { label: "Строительная часть", href: "/dashboard/construction/schedule" },
+  construction: { label: "Строительная часть", href: "/construction/schedule" },
   warehouse: { label: "Склад", href: "/dashboard/warehouse/balance" },
 } as const
 
@@ -73,10 +73,10 @@ function getBreadcrumbs(pathname: string): { href: string; label: string; isLast
   let section: { label: string; href: string } | null = null
   const items: { href: string; label: string }[] = []
 
-  if (pathname.startsWith("/dashboard/construction")) {
+  if (pathname.startsWith("/construction")) {
     section = SECTIONS.construction
-    if (segments[2] === "schedule") items.push({ href: "/dashboard/construction/schedule", label: "График монтажа" })
-    else if (segments[2] === "objects") items.push({ href: "/dashboard/construction/objects", label: "Объекты" })
+    if (segments[1] === "schedule") items.push({ href: "/construction/schedule", label: "График монтажа" })
+    else if (segments[1] === "objects") items.push({ href: "/construction/objects", label: "Объекты" })
   } else if (pathname.startsWith("/dashboard/warehouse")) {
     section = SECTIONS.warehouse
     const sub = WAREHOUSE_SUBSECTIONS[segments[2]]

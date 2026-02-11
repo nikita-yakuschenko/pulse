@@ -203,13 +203,7 @@ export default function SchedulePage() {
                     </CardContent>
                   </Card>
 
-                  {(() => {
-                    const hasStages = (Object.keys(STAGE_LABELS) as Array<keyof ConstructionObject["stages"]>).some(
-                      (key) => selectedObject.stages[key]
-                    )
-                    if (!hasStages) return null
-                    return (
-                      <Card className="py-4">
+                  <Card className="py-4">
                         <CardHeader className="py-0 pb-1.5 px-6">
                           <CardTitle className="text-xs font-medium tracking-tight text-muted-foreground uppercase">
                             Этапы
@@ -243,8 +237,6 @@ export default function SchedulePage() {
                           </ul>
                         </CardContent>
                       </Card>
-                    )
-                  })()}
 
                   {selectedObject.statusComment && (
                     <>
@@ -358,4 +350,3 @@ function ScheduleTable({
     </div>
   )
 }
-

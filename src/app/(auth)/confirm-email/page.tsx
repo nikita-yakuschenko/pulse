@@ -22,7 +22,14 @@ export default function ConfirmEmailPage() {
   async function handleResend() {
     setLoading(true)
     const supabase = createClient()
-    const { error } = await supabase.auth.resend({ type: "signup" })
+    const { data: { user } } = await supabase.auth.getUser()
+    const email = user?.email
+    if (!email) {
+      setLoading(false)
+      toast.error("Не удалось определить email. Войдите снова.")
+      return
+    }
+    const { error } = await supabase.auth.resend({ type: "signup", email })
     setLoading(false)
     if (error) {
       toast.error(error.message === "Email rate limit exceeded" ? "Слишком частые запросы. Подождите несколько минут." : "Не удалось отправить письмо.")
