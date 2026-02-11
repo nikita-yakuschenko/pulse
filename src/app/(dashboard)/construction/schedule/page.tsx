@@ -82,33 +82,28 @@ export default function SchedulePage() {
   return (
     <div className="min-w-0 w-full px-4 py-8">
       <h1 className="text-2xl font-bold">График монтажа</h1>
-      <p className="mt-2 text-muted-foreground">
-        График производства работ по монтажу. План по месяцам, группировка по
-        территориям.
-      </p>
-
-      <div className="mt-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <Select value={period} onValueChange={setPeriod}>
-          <SelectTrigger className="w-[180px]">
-            <SelectValue placeholder="Период" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="2026-03">Март 2026</SelectItem>
-            <SelectItem value="2026-04">Апрель 2026</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
 
       <div className="mt-6">
         <Tabs defaultValue="all" className="w-full">
-          <TabsList className="flex-wrap h-auto gap-1">
-            <TabsTrigger value="all">Все</TabsTrigger>
-            {TERRITORIES.map((t) => (
-              <TabsTrigger key={t.id} value={t.id}>
-                {t.name.length > 25 ? t.name.slice(0, 22) + "…" : t.name}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <TabsList className="flex-wrap h-auto gap-1">
+              <TabsTrigger value="all">Все</TabsTrigger>
+              {TERRITORIES.map((t) => (
+                <TabsTrigger key={t.id} value={t.id}>
+                  {t.name.length > 25 ? t.name.slice(0, 22) + "…" : t.name}
+                </TabsTrigger>
+              ))}
+            </TabsList>
+            <Select value={period} onValueChange={setPeriod}>
+              <SelectTrigger className="w-[180px]">
+                <SelectValue placeholder="Месяц" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="2026-03">Март 2026</SelectItem>
+                <SelectItem value="2026-04">Апрель 2026</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
           {(["all", ...TERRITORIES.map((t) => t.id)] as const).map((tabId) => (
             <TabsContent key={tabId} value={tabId} className="mt-4">
               <ScheduleTable
