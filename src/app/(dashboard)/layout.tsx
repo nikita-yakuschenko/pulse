@@ -8,8 +8,13 @@ export default async function DashboardLayout({
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
 
+  // Без авторизации в дашборд не пускаем — только через вход
+  if (!user) {
+    redirect("/sign-in")
+  }
+
   // Подтверждение почты: без подтверждённого email в дашборд не пускаем
-  if (user && !user.email_confirmed_at) {
+  if (!user.email_confirmed_at) {
     redirect("/confirm-email")
   }
 

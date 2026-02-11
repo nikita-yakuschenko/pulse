@@ -48,14 +48,14 @@ export async function updateSession(request: NextRequest) {
     return NextResponse.redirect(url);
   }
 
-  // /dashboard и подразделы — только для залогиненных
-  if (pathname.startsWith("/dashboard")) {
-    if (!user) {
-      const url = request.nextUrl.clone();
-      url.pathname = "/sign-in";
-      url.searchParams.set("redirect", pathname);
-      return NextResponse.redirect(url);
-    }
+  // Все пути дашборда (dashboard, construction, docs, purchases) — только для залогиненных
+  const dashboardPrefixes = ["/dashboard", "/construction", "/docs", "/purchases"];
+  const isDashboardPath = dashboardPrefixes.some((prefix) => pathname.startsWith(prefix));
+  if (isDashboardPath && !user) {
+    const url = request.nextUrl.clone();
+    url.pathname = "/sign-in";
+    url.searchParams.set("redirect", pathname);
+    return NextResponse.redirect(url);
   }
 
   // /sign-in, /sign-up — если уже залогинен, редирект на dashboard
