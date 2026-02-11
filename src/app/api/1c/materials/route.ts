@@ -1,15 +1,14 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getMaterials } from "@/integrations/1c"
+import { buildCacheKey, cacheGet, cacheSet } from "@/lib/redis"
 
-/** In-memory кэш дерева номенклатуры (одинаково для всех пользователей одной 1С) */
-let materialsCache: { data: unknown; ts: number } | null = null
-const CACHE_TTL_MS = 5 * 60 * 1000 // 5 минут
+const CACHE_TTL_SEC = 5 * 60 // 5 минут
 
 /**
  * GET /api/1c/materials
- * Дерево номенклатуры (материалов) из 1С materials/get/list
- * Кэшируется на 5 минут в памяти сервера.
+ * Дерево номенклатуры (материалов) из 1С materials/get/list.
+ * Кэшируется в Redis на 5 минут (если задан REDIS_URL).
  */
 export async function GET() {
   try {
@@ -31,16 +30,16 @@ export async function GET() {
       )
     }
 
-    // Отдаём из кэша, если он свежий
-    if (materialsCache && Date.now() - materialsCache.ts < CACHE_TTL_MS) {
-      return NextResponse.json({ data: materialsCache.data })
+    const cacheKey = buildCacheKey("1c:materials", user.id)
+    const cached = await cacheGet<{ data: unknown }>(cacheKey)
+    if (cached != null) {
+      return NextResponse.json(cached)
     }
 
     const data = await getMaterials(metadata)
     const result = Array.isArray(data) ? data : (data ?? [])
 
-    // Сохраняем в кэш
-    materialsCache = { data: result, ts: Date.now() }
+    await cacheSet(cacheKey, { data: result }, CACHE_TTL_SEC)
 
     return NextResponse.json({ data: result })
   } catch (error) {

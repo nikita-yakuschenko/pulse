@@ -1,16 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getSupplierOrders, type SordersFilters } from "@/integrations/1c"
+import { buildCacheKey, cacheGet, cacheSet } from "@/lib/redis"
+
+const CACHE_TTL_SEC = 5 * 60 // 5 минут
 
 /**
  * GET /api/1c/supplier-orders
- * Получает список заказов поставщикам из 1С
- * 
- * Query параметры:
- * - code: номер заказа (поиск по вхождению)
- * - contractor: контрагент (поиск по вхождению)
- * - year: год в коротком формате (24, 25, 26)
- * - full: 1 или true для полной информации с табличной частью
+ * Получает список заказов поставщикам из 1С. Кэш в Redis.
+ * Query: code, contractor, year, full
  */
 export async function GET(request: NextRequest) {
   try {
@@ -22,11 +20,9 @@ export async function GET(request: NextRequest) {
     }
 
     const metadata = user.user_metadata || {}
-    
-    // Проверяем, настроена ли интеграция 1С
     const integrations = metadata.integrations as Record<string, unknown> | undefined
     const oneC = integrations?.["1c"] as { enabled: boolean } | undefined
-    
+
     if (!oneC?.enabled) {
       return NextResponse.json(
         { error: "Интеграция 1С не настроена. Настройте в разделе Настройки → Интеграции." },
@@ -34,24 +30,29 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Извлекаем параметры фильтрации из query string
     const searchParams = request.nextUrl.searchParams
     const filters: SordersFilters = {}
-    
+
     const code = searchParams.get("code")
     const contractor = searchParams.get("contractor")
     const year = searchParams.get("year")
     const full = searchParams.get("full")
-    
+
     if (code) filters.code = code
     if (contractor) filters.contractor = contractor
     if (year) filters.year = year
     if (full === "1" || full === "true") filters.full = true
 
-    // Получаем данные из 1С
-    const orders = await getSupplierOrders(metadata, filters)
+    const cacheKey = buildCacheKey("1c:supplier-orders", user.id, filters as Record<string, string>)
+    const cached = await cacheGet<{ data: unknown; filters: SordersFilters }>(cacheKey)
+    if (cached != null) {
+      return NextResponse.json(cached)
+    }
 
-    return NextResponse.json({ data: orders, filters })
+    const orders = await getSupplierOrders(metadata, filters)
+    const body = { data: orders, filters }
+    await cacheSet(cacheKey, body, CACHE_TTL_SEC)
+    return NextResponse.json(body)
   } catch (error) {
     console.error("Ошибка получения заказов поставщикам:", error)
     

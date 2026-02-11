@@ -1,11 +1,13 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getSpecifications, type SpecificationsFilters } from "@/integrations/1c"
+import { buildCacheKey, cacheGet, cacheSet } from "@/lib/redis"
+
+const CACHE_TTL_SEC = 5 * 60 // 5 минут
 
 /**
  * GET /api/1c/specifications
- * Список спецификаций из 1С
- *
+ * Список спецификаций из 1С. Кэш в Redis по ключу пользователя и фильтрам.
  * Query: name, code, material, year, month, full
  */
 export async function GET(request: NextRequest) {
@@ -45,8 +47,16 @@ export async function GET(request: NextRequest) {
     if (month != null) filters.month = month
     if (full === "1" || full === "true") filters.full = true
 
+    const cacheKey = buildCacheKey("1c:specifications", user.id, filters as Record<string, string>)
+    const cached = await cacheGet<{ data: unknown; filters: SpecificationsFilters }>(cacheKey)
+    if (cached != null) {
+      return NextResponse.json(cached)
+    }
+
     const data = await getSpecifications(metadata, filters)
-    return NextResponse.json({ data, filters })
+    const body = { data, filters }
+    await cacheSet(cacheKey, body, CACHE_TTL_SEC)
+    return NextResponse.json(body)
   } catch (error) {
     console.error("Ошибка получения спецификаций:", error)
     const message = error instanceof Error ? error.message : "Неизвестная ошибка"

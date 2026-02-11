@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getWarehouseBalances, getWarehouses } from "@/integrations/1c"
+import { buildCacheKey, cacheGet, cacheSet } from "@/lib/redis"
 
 /** Код основного склада — доступный остаток считается только по нему (списание с основного на склад производства). warehouses/get/list: 000000007 = «Основной склад (Зайцева)». */
 const MAIN_WAREHOUSE_CODE = "000000007"
@@ -70,6 +71,12 @@ export async function GET() {
       )
     }
 
+    const cacheKey = buildCacheKey("1c:warehouse:balances", user.id)
+    const cached = await cacheGet<{ data: unknown }>(cacheKey)
+    if (cached != null) {
+      return NextResponse.json(cached)
+    }
+
     const [rawBalances, rawWarehouses] = await Promise.all([
       getWarehouseBalances(metadata),
       getWarehouses(metadata),
@@ -79,8 +86,9 @@ export async function GET() {
     const tree = Array.isArray(rawBalances) ? rawBalances : []
 
     const data = mainName ? filterTreeByMainWarehouse(tree as TreeNode[], mainName) : tree
-
-    return NextResponse.json({ data })
+    const body = { data }
+    await cacheSet(cacheKey, body, 5 * 60) // 5 мин
+    return NextResponse.json(body)
   } catch (error) {
     console.error("Ошибка получения складских остатков:", error)
 
