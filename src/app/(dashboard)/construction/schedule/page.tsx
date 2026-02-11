@@ -1,6 +1,6 @@
 "use client"
 
-import { useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import {
   Table,
   TableBody,
@@ -9,7 +9,6 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import {
   Select,
   SelectContent,
@@ -17,6 +16,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Button } from "@/components/ui/button"
+import { Label } from "@/components/ui/label"
+import { Input } from "@/components/ui/input"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   Sheet,
@@ -25,12 +27,20 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { IconBox, IconLayoutGrid } from "@tabler/icons-react"
+import { IconBox, IconChevronLeft, IconChevronRight, IconLayoutGrid } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { TERRITORIES, MOCK_SCHEDULE_OBJECTS } from "@/lib/mock-construction-schedule"
 import type { ConstructionObject } from "@/types/construction-schedule"
 import { cn } from "@/lib/utils"
+
+const PERIOD_OPTIONS = [
+  { value: "2026-03", label: "Март 2026" },
+  { value: "2026-04", label: "Апрель 2026" },
+]
+const TERRITORY_ALL = "all"
+const TYPE_ALL = "all"
+const MANAGER_ALL = "all"
 
 // Формат суммы: 6 179 000
 function formatAmount(amount: number): string {
@@ -55,23 +65,54 @@ const STAGE_LABELS: Record<keyof ConstructionObject["stages"], string> = {
   handover: "Сдача",
 }
 
-export default function SchedulePage() {
-  const [period, setPeriod] = useState("2026-03")
-  const [selectedObject, setSelectedObject] = useState<ConstructionObject | null>(
-    null
-  )
-  const [sheetOpen, setSheetOpen] = useState(false)
+const PAGE_SIZE_PRESETS = [17, 20, 50, 100, 200]
 
-  const objectsByTerritory = useMemo(() => {
-    const map = new Map<string, ConstructionObject[]>()
-    map.set("all", MOCK_SCHEDULE_OBJECTS)
-    for (const t of TERRITORIES) {
-      map.set(
-        t.id,
-        MOCK_SCHEDULE_OBJECTS.filter((o) => o.territoryId === t.id)
-      )
-    }
-    return map
+export default function SchedulePage() {
+  const [filterPeriod, setFilterPeriod] = useState("2026-03")
+  const [filterTerritory, setFilterTerritory] = useState(TERRITORY_ALL)
+  const [filterType, setFilterType] = useState(TYPE_ALL)
+  const [filterManager, setFilterManager] = useState(MANAGER_ALL)
+  const [selectedObject, setSelectedObject] = useState<ConstructionObject | null>(null)
+
+  const uniqueManagers = useMemo(() => {
+    const set = new Set(MOCK_SCHEDULE_OBJECTS.map((o) => o.manager).filter(Boolean))
+    return Array.from(set).sort()
+  }, [])
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(17)
+  const [pageSizeSelectValue, setPageSizeSelectValue] = useState("17")
+
+  const setPageSizeAndSave = useCallback((n: number) => {
+    const clamped = Math.max(1, Math.min(500, n))
+    setPageSize(clamped)
+    setPage(1)
+    setPageSizeSelectValue(PAGE_SIZE_PRESETS.includes(clamped) ? String(clamped) : "custom")
+  }, [])
+
+  const filteredObjects = useMemo(() => {
+    return MOCK_SCHEDULE_OBJECTS.filter((o) => {
+      if (filterTerritory !== TERRITORY_ALL && o.territoryId !== filterTerritory) return false
+      if (filterType !== TYPE_ALL && o.type !== filterType) return false
+      if (filterManager !== MANAGER_ALL && o.manager !== filterManager) return false
+      return true
+    })
+  }, [filterTerritory, filterType, filterManager])
+
+  const totalPages = Math.max(1, Math.ceil(filteredObjects.length / pageSize))
+  const startIdx = (page - 1) * pageSize
+  const currentPageObjects = filteredObjects.slice(startIdx, startIdx + pageSize)
+
+  useEffect(() => {
+    if (filteredObjects.length > 0 && page > totalPages) setPage(1)
+  }, [filteredObjects.length, page, totalPages])
+
+  const handleResetFilters = useCallback(() => {
+    setFilterPeriod("2026-03")
+    setFilterTerritory(TERRITORY_ALL)
+    setFilterType(TYPE_ALL)
+    setFilterManager(MANAGER_ALL)
+    setPage(1)
   }, [])
 
   const openDetail = (obj: ConstructionObject) => {
@@ -80,40 +121,153 @@ export default function SchedulePage() {
   }
 
   return (
-    <div className="min-w-0 w-full px-4 py-8">
-      <h1 className="text-2xl font-bold">График монтажа</h1>
-
-      <div className="mt-6">
-        <Tabs defaultValue="all" className="w-full">
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <TabsList className="flex-wrap h-auto gap-1">
-              <TabsTrigger value="all">Все</TabsTrigger>
-              {TERRITORIES.map((t) => (
-                <TabsTrigger key={t.id} value={t.id}>
-                  {t.name.length > 25 ? t.name.slice(0, 22) + "…" : t.name}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-            <Select value={period} onValueChange={setPeriod}>
-              <SelectTrigger className="w-[180px]">
-                <SelectValue placeholder="Месяц" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="2026-03">Март 2026</SelectItem>
-                <SelectItem value="2026-04">Апрель 2026</SelectItem>
-              </SelectContent>
-            </Select>
+    <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+      <div className="px-4 lg:px-6">
+        <h1 className="text-2xl font-bold">График монтажа</h1>
+        <div className="mt-3 flex flex-col gap-3">
+          {/* Форма фильтров */}
+          <div
+            className="grid min-h-[5rem] grid-cols-1 gap-x-3 gap-y-1.5 rounded-lg border border-border/50 bg-muted/30 p-3 sm:grid-cols-2 lg:grid-cols-[auto_auto_auto_auto_1fr_auto]"
+          >
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Месяц</Label>
+              <Select value={filterPeriod} onValueChange={setFilterPeriod}>
+                <SelectTrigger size="sm" className="h-8 w-[180px]">
+                  <SelectValue placeholder="Месяц" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PERIOD_OPTIONS.map((p) => (
+                    <SelectItem key={p.value} value={p.value}>
+                      {p.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Насел. пункт</Label>
+              <Select value={filterTerritory} onValueChange={(v) => { setFilterTerritory(v); setPage(1) }}>
+                <SelectTrigger size="sm" className="h-8 w-[220px]">
+                  <SelectValue placeholder="Все" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={TERRITORY_ALL}>Все</SelectItem>
+                  {TERRITORIES.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>
+                      {t.name.length > 35 ? t.name.slice(0, 32) + "…" : t.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Тип</Label>
+              <Select value={filterType} onValueChange={(v) => { setFilterType(v); setPage(1) }}>
+                <SelectTrigger size="sm" className="h-8 w-[120px]">
+                  <SelectValue placeholder="Все" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={TYPE_ALL}>Все</SelectItem>
+                  <SelectItem value="ПКД">ПКД</SelectItem>
+                  <SelectItem value="МД">МД</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Прораб</Label>
+              <Select value={filterManager} onValueChange={(v) => { setFilterManager(v); setPage(1) }}>
+                <SelectTrigger size="sm" className="h-8 w-[160px]">
+                  <SelectValue placeholder="Все" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value={MANAGER_ALL}>Все</SelectItem>
+                  {uniqueManagers.map((m) => (
+                    <SelectItem key={m} value={m}>{m}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="flex items-end">
+              <Button size="sm" variant="outline" onClick={handleResetFilters} className="h-8">
+                Сбросить
+              </Button>
+            </div>
           </div>
-          {(["all", ...TERRITORIES.map((t) => t.id)] as const).map((tabId) => (
-            <TabsContent key={tabId} value={tabId} className="mt-4">
-              <ScheduleTable
-                objects={objectsByTerritory.get(tabId) ?? []}
-                onRowClick={openDetail}
-                formatAmount={formatAmount}
-              />
-            </TabsContent>
-          ))}
-        </Tabs>
+
+          {/* Таблица */}
+          <div className="rounded-md border overflow-hidden">
+            <ScheduleTable
+              objects={currentPageObjects}
+              onRowClick={openDetail}
+              formatAmount={formatAmount}
+            />
+          </div>
+
+          {/* Пагинация */}
+          {filteredObjects.length > 0 && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Select
+                  value={pageSizeSelectValue}
+                  onValueChange={(value) => {
+                    if (value === "custom") {
+                      setPageSizeSelectValue("custom")
+                      return
+                    }
+                    setPageSizeAndSave(Number(value))
+                  }}
+                >
+                  <SelectTrigger size="sm" className="h-8 w-[120px]">
+                    <SelectValue placeholder="Выберите..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {PAGE_SIZE_PRESETS.map((n) => (
+                      <SelectItem key={n} value={String(n)}>{n}</SelectItem>
+                    ))}
+                    <SelectItem value="custom">Своё...</SelectItem>
+                  </SelectContent>
+                </Select>
+                {pageSizeSelectValue === "custom" && (
+                  <Input
+                    type="number"
+                    min={1}
+                    max={500}
+                    value={pageSize}
+                    onChange={(e) => {
+                      const v = e.target.value === "" ? 17 : Number(e.target.value)
+                      if (!Number.isNaN(v)) setPageSizeAndSave(v)
+                    }}
+                    className="h-8 w-[72px]"
+                  />
+                )}
+                <span className="text-sm text-muted-foreground">записей на странице</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                >
+                  <IconChevronLeft className="h-4 w-4" />
+                  Предыдущая
+                </Button>
+                <span className="text-sm text-muted-foreground">
+                  Страница {page} из {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages || totalPages === 0}
+                >
+                  Следующая
+                  <IconChevronRight className="h-4 w-4" />
+                </Button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
@@ -265,17 +419,10 @@ function ScheduleTable({
   onRowClick: (obj: ConstructionObject) => void
   formatAmount: (n: number) => string
 }) {
-  if (objects.length === 0) {
-    return (
-      <div className="rounded-lg border border-dashed p-8 text-center text-muted-foreground text-sm">
-        Нет объектов за выбранный период
-      </div>
-    )
-  }
   return (
-    <div className="w-full rounded-lg border">
-      <Table>
-        <TableHeader>
+    <div className="w-full">
+      <Table className="[&_tbody_td]:h-10 [&_tbody_td]:py-1">
+        <TableHeader className="bg-muted">
           <TableRow>
             <TableHead>Насел. пункт</TableHead>
             <TableHead>Договор</TableHead>
@@ -291,7 +438,14 @@ function ScheduleTable({
           </TableRow>
         </TableHeader>
         <TableBody>
-          {objects.map((obj) => (
+          {objects.length === 0 ? (
+            <TableRow>
+              <TableCell colSpan={11} className="!h-24 text-center">
+                <span className="text-muted-foreground text-sm">Нет объектов за выбранный период. Измените фильтры.</span>
+              </TableCell>
+            </TableRow>
+          ) : (
+          objects.map((obj) => (
             <TableRow
               key={obj.id}
               className="cursor-pointer"
@@ -339,7 +493,8 @@ function ScheduleTable({
                 {obj.statusComment || "—"}
               </TableCell>
             </TableRow>
-          ))}
+          )))
+          }
         </TableBody>
       </Table>
     </div>
