@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getPayments, type PaymentsFilters } from "@/integrations/1c"
+import { buildCacheKey, cacheGet, cacheSet } from "@/lib/redis"
+
+const CACHE_TTL_SEC = 5 * 60 // 5 минут
 
 /**
  * GET /api/1c/payments
- * Получает список платежей (оплат) из 1С
- * 
- * Query параметры:
- * - code: номер платежа
- * - contractor: контрагент
- * - year: год в коротком формате (24, 25, 26)
- * - org: организация
- * - responsible: ответственный
- * - status: статус
+ * Получает список платежей (оплат) из 1С. Кэш в Redis.
+ * Query: code, contractor, year, org, responsible, status, full
  */
 export async function GET(request: NextRequest) {
   try {
@@ -24,11 +20,9 @@ export async function GET(request: NextRequest) {
     }
 
     const metadata = user.user_metadata || {}
-    
-    // Проверяем, настроена ли интеграция 1С
     const integrations = metadata.integrations as Record<string, unknown> | undefined
     const oneC = integrations?.["1c"] as { enabled: boolean } | undefined
-    
+
     if (!oneC?.enabled) {
       return NextResponse.json(
         { error: "Интеграция 1С не настроена. Настройте в разделе Настройки → Интеграции." },
@@ -36,10 +30,9 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Извлекаем параметры фильтрации из query string
     const searchParams = request.nextUrl.searchParams
     const filters: PaymentsFilters = {}
-    
+
     const code = searchParams.get("code")
     const contractor = searchParams.get("contractor")
     const year = searchParams.get("year")
@@ -47,7 +40,7 @@ export async function GET(request: NextRequest) {
     const responsible = searchParams.get("responsible")
     const status = searchParams.get("status")
     const full = searchParams.get("full")
-    
+
     if (code) filters.code = code
     if (contractor) filters.contractor = contractor
     if (year) filters.year = year
@@ -56,10 +49,16 @@ export async function GET(request: NextRequest) {
     if (status) filters.status = status
     if (full) filters.full = full
 
-    // Получаем данные из 1С
-    const payments = await getPayments(metadata, filters)
+    const cacheKey = buildCacheKey("1c:payments", user.id, filters as Record<string, string>)
+    const cached = await cacheGet<{ data: unknown; filters: PaymentsFilters }>(cacheKey)
+    if (cached != null) {
+      return NextResponse.json(cached)
+    }
 
-    return NextResponse.json({ data: payments, filters })
+    const payments = await getPayments(metadata, filters)
+    const body = { data: payments, filters }
+    await cacheSet(cacheKey, body, CACHE_TTL_SEC)
+    return NextResponse.json(body)
   } catch (error) {
     console.error("Ошибка получения платежей:", error)
     

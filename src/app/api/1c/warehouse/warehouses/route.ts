@@ -1,10 +1,13 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getWarehouses } from "@/integrations/1c"
+import { buildCacheKey, cacheGet, cacheSet } from "@/lib/redis"
+
+const CACHE_TTL_SEC = 5 * 60 // 5 минут
 
 /**
  * GET /api/1c/warehouse/warehouses
- * Получает список складов из 1С (warehouses/get/list).
+ * Получает список складов из 1С. Кэш в Redis.
  */
 export async function GET() {
   try {
@@ -26,10 +29,17 @@ export async function GET() {
       )
     }
 
+    const cacheKey = buildCacheKey("1c:warehouse:warehouses", user.id)
+    const cached = await cacheGet<{ data: unknown[] }>(cacheKey)
+    if (cached != null) {
+      return NextResponse.json(cached)
+    }
+
     const raw = await getWarehouses(metadata)
     const data = Array.isArray(raw) ? raw : []
-
-    return NextResponse.json({ data })
+    const body = { data }
+    await cacheSet(cacheKey, body, CACHE_TTL_SEC)
+    return NextResponse.json(body)
   } catch (error) {
     console.error("Ошибка получения складов:", error)
 
