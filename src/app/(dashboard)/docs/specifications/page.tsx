@@ -28,6 +28,8 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { TableSkeleton } from "@/components/ui/table-skeleton"
+import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
 import { IconChevronLeft, IconChevronRight, IconCopy, IconLoader, IconSearch, IconX } from "@tabler/icons-react"
 
 // Ответ 1С — массив объектов, структура может отличаться
@@ -115,6 +117,11 @@ export default function SpecificationsPage() {
     setPageSizeSelectValue(PAGE_SIZE_PRESETS.includes(clamped) ? String(clamped) : "custom")
     localStorage.setItem("specifications-page-size", String(clamped))
   }, [])
+
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const autoPageSize = useTableAutoPageSize(tableContainerRef)
+  const useAutoSize = pageSizeSelectValue === "auto" && autoPageSize > 0
+  const effectivePageSize = useAutoSize ? autoPageSize : pageSize
 
   const loadList = useCallback(
     async (overrides?: {
@@ -255,10 +262,16 @@ export default function SpecificationsPage() {
         })()
       : SPEC_COLUMN_ORDER
 
-  const totalPages = Math.max(1, Math.ceil(list.length / pageSize))
-  const startIdx = (page - 1) * pageSize
-  const endIdx = startIdx + pageSize
+  const totalPages = Math.max(1, Math.ceil(list.length / effectivePageSize))
+  const startIdx = (page - 1) * effectivePageSize
+  const endIdx = startIdx + effectivePageSize
   const currentPageList = list.slice(startIdx, endIdx)
+
+  useEffect(() => {
+    if (autoPageSize === 0 && pageSizeSelectValue === "auto") {
+      setPageSizeSelectValue("17")
+    }
+  }, [autoPageSize, pageSizeSelectValue])
 
   // Сброс страницы, если после фильтрации текущая страница вне диапазона
   useEffect(() => {
@@ -383,14 +396,10 @@ export default function SpecificationsPage() {
         </div>
       </div>
 
+      <div ref={tableContainerRef} className="flex flex-col gap-3">
       <div className="rounded-md border overflow-hidden">
         {loading ? (
-          <div className="flex items-center justify-center py-12">
-            <IconLoader className="h-6 w-6 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-sm text-muted-foreground">
-              Загрузка спецификаций…
-            </span>
-          </div>
+          <TableSkeleton columnCount={6} rowCount={10} />
         ) : list.length === 0 ? (
           <div className="py-12 text-center text-sm text-muted-foreground">
             Нет данных. Измените фильтры или дождитесь загрузки из 1С.
@@ -462,13 +471,25 @@ export default function SpecificationsPage() {
                     setPageSizeSelectValue("custom")
                     return
                   }
+                  if (value === "auto") {
+                    setPageSizeSelectValue("auto")
+                    setPage(1)
+                    return
+                  }
                   setPageSizeAndSave(Number(value))
                 }}
               >
                 <SelectTrigger size="sm" className="h-8 w-[120px]">
-                  <SelectValue placeholder="Выберите..." />
+                  {pageSizeSelectValue === "auto" && autoPageSize > 0 ? (
+                    <span>Авто ({autoPageSize})</span>
+                  ) : (
+                    <SelectValue placeholder="Выберите..." />
+                  )}
                 </SelectTrigger>
                 <SelectContent>
+                  {autoPageSize > 0 && (
+                    <SelectItem value="auto">Авто ({autoPageSize})</SelectItem>
+                  )}
                   <SelectItem value="17">17</SelectItem>
                   <SelectItem value="20">20</SelectItem>
                   <SelectItem value="50">50</SelectItem>
@@ -519,6 +540,7 @@ export default function SpecificationsPage() {
             </div>
           </div>
         )}
+      </div>
         </div>
       </div>
 
