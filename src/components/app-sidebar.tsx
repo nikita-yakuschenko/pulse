@@ -55,7 +55,7 @@ const ENABLED_URLS = new Set([
   "/docs/projects",
   "/dashboard/warehouse/balance",
   "/dashboard/warehouse/materials",
-  "/dashboard/construction/schedule",
+  "/construction/schedule",
 ])
 
 const procurementCollapsibleItems = [
@@ -95,8 +95,8 @@ const productionItems = [
 ]
 
 const constructionItems = [
-  { title: "График монтажа", url: "/dashboard/construction/schedule", icon: IconCalendar },
-  { title: "Объекты", url: "/dashboard/construction/objects", icon: IconMapPin },
+  { title: "График монтажа", url: "/construction/schedule", icon: IconCalendar },
+  { title: "Объекты", url: "/construction/objects", icon: IconMapPin },
 ]
 
 const warehouseItems = [
