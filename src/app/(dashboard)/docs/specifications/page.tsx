@@ -28,7 +28,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { IconCopy, IconLoader, IconSearch, IconX } from "@tabler/icons-react"
+import { IconChevronLeft, IconChevronRight, IconCopy, IconLoader, IconSearch, IconX } from "@tabler/icons-react"
 
 // Ответ 1С — массив объектов, структура может отличаться
 type SpecificationRecord = Record<string, unknown>
@@ -89,6 +89,33 @@ export default function SpecificationsPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailData, setDetailData] = useState<SpecificationRecord | null>(null)
 
+  // Пагинация — как в Заказах/Заявках
+  const PAGE_SIZE_PRESETS = [17, 20, 50, 100, 200]
+  const [page, setPage] = useState(1)
+  const [pageSize, setPageSize] = useState(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("specifications-page-size")
+      const n = saved ? Number(saved) : 17
+      return n >= 1 && n <= 500 ? n : 17
+    }
+    return 17
+  })
+  const [pageSizeSelectValue, setPageSizeSelectValue] = useState<string>(() => {
+    if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("specifications-page-size")
+      const n = saved ? Number(saved) : 17
+      return PAGE_SIZE_PRESETS.includes(n) ? String(n) : "custom"
+    }
+    return "17"
+  })
+  const setPageSizeAndSave = useCallback((n: number) => {
+    const clamped = Math.max(1, Math.min(500, n))
+    setPageSize(clamped)
+    setPage(1)
+    setPageSizeSelectValue(PAGE_SIZE_PRESETS.includes(clamped) ? String(clamped) : "custom")
+    localStorage.setItem("specifications-page-size", String(clamped))
+  }, [])
+
   const loadList = useCallback(
     async (overrides?: {
       name?: string
@@ -128,7 +155,14 @@ export default function SpecificationsPage() {
                 String(row.Наименование ?? "").toLowerCase().includes(nameFilter)
               )
             : rawList
-        setList(filtered)
+        // Сортировка для отображения: всегда по дате утверждения, от новых к старым
+        const sorted = [...filtered].sort((a, b) => {
+          const dateA = parseSpecDate(a.ДатаУтверждения)
+          const dateB = parseSpecDate(b.ДатаУтверждения)
+          return dateB - dateA
+        })
+        setList(sorted)
+        setPage(1)
       } catch {
         toast.error("Ошибка загрузки данных")
         setList([])
@@ -206,24 +240,37 @@ export default function SpecificationsPage() {
     })
   }, [loadList])
 
-  // Порядок колонок: сначала фиксированный список, затем остальные поля из данных
+  // Поля «Стоимость*» показываем только в Sheet (детали), в общей таблице не выводим
+  const isSheetOnlyField = (key: string) => key.startsWith("Стоимость")
   const SPEC_COLUMN_ORDER = ["Код", "Наименование", "ДатаПоставки", "Ответственный", "ДатаУтверждения"]
   const columns =
     list.length > 0
       ? (() => {
-          const keys = Object.keys(list[0]).filter((k) => k !== "Материалы" && k !== "Materials")
+          const keys = Object.keys(list[0]).filter(
+            (k) => k !== "Материалы" && k !== "Materials" && !isSheetOnlyField(k)
+          )
           const ordered = SPEC_COLUMN_ORDER.filter((k) => keys.includes(k))
           const rest = keys.filter((k) => !SPEC_COLUMN_ORDER.includes(k))
           return [...ordered, ...rest]
         })()
       : SPEC_COLUMN_ORDER
 
+  const totalPages = Math.max(1, Math.ceil(list.length / pageSize))
+  const startIdx = (page - 1) * pageSize
+  const endIdx = startIdx + pageSize
+  const currentPageList = list.slice(startIdx, endIdx)
+
+  // Сброс страницы, если после фильтрации текущая страница вне диапазона
+  useEffect(() => {
+    if (list.length > 0 && page > totalPages) setPage(1)
+  }, [list.length, page, totalPages])
+
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-      <div className="flex flex-col gap-4 px-4 lg:px-6">
+      <div className="px-4 lg:px-6">
         <h1 className="text-2xl font-bold">Спецификации</h1>
-
-        <div className="grid gap-x-3 gap-y-1.5 rounded-lg border border-border/50 bg-muted/30 p-3 sm:grid-cols-2 lg:grid-cols-6">
+        <div className="mt-3 flex flex-col gap-3">
+        <div className="grid min-h-[5rem] grid-cols-1 gap-x-3 gap-y-1.5 rounded-lg border border-border/50 bg-muted/30 p-3 sm:grid-cols-2 lg:grid-cols-6">
         <div className="lg:col-span-1">
           <Label htmlFor="spec-name" className="text-xs text-muted-foreground" title="Строка передаётся в 1С: поиск по вхождению в наименовании (логика на стороне 1С)">
             По наименованию
@@ -349,8 +396,8 @@ export default function SpecificationsPage() {
             Нет данных. Измените фильтры или дождитесь загрузки из 1С.
           </div>
         ) : (
-          <Table>
-            <TableHeader>
+          <Table className="[&_tbody_td]:h-10 [&_tbody_td]:py-1">
+            <TableHeader className="bg-muted">
               <TableRow>
                 {columns.map((key) => (
                   <TableHead
@@ -363,16 +410,16 @@ export default function SpecificationsPage() {
               </TableRow>
             </TableHeader>
             <TableBody>
-              {list.map((row, idx) => (
+              {currentPageList.map((row, idx) => (
                 <TableRow
-                  key={idx}
+                  key={startIdx + idx}
                   className="cursor-pointer hover:bg-muted/50"
                   onClick={() => handleOpenDetail(row)}
                 >
                   {columns.map((key) => (
                     <TableCell
                       key={key}
-                      className={key === "Код" ? `${codeCellClass} w-[132px] min-w-[132px] max-w-[132px]` : "py-2 text-sm"}
+                      className={key === "Код" ? `${codeCellClass} w-[132px] min-w-[132px] max-w-[132px]` : "text-sm"}
                       style={key === "Код" ? codeCellStyle : undefined}
                     >
                       {key === "Код" ? (
@@ -401,6 +448,76 @@ export default function SpecificationsPage() {
               ))}
             </TableBody>
           </Table>
+        )}
+        </div>
+
+        {/* Пагинация — как в Заказах/Заявках */}
+        {!loading && list.length > 0 && (
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Select
+                value={pageSizeSelectValue}
+                onValueChange={(value) => {
+                  if (value === "custom") {
+                    setPageSizeSelectValue("custom")
+                    return
+                  }
+                  setPageSizeAndSave(Number(value))
+                }}
+              >
+                <SelectTrigger size="sm" className="h-8 w-[120px]">
+                  <SelectValue placeholder="Выберите..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="17">17</SelectItem>
+                  <SelectItem value="20">20</SelectItem>
+                  <SelectItem value="50">50</SelectItem>
+                  <SelectItem value="100">100</SelectItem>
+                  <SelectItem value="200">200</SelectItem>
+                  <SelectItem value="custom">Своё...</SelectItem>
+                </SelectContent>
+              </Select>
+              {pageSizeSelectValue === "custom" && (
+                <Input
+                  type="number"
+                  min={1}
+                  max={500}
+                  value={pageSize}
+                  onChange={(e) => {
+                    const v = e.target.value === "" ? 17 : Number(e.target.value)
+                    if (!Number.isNaN(v)) setPageSizeAndSave(v)
+                  }}
+                  className="h-8 w-[72px]"
+                />
+              )}
+              <span className="text-sm text-muted-foreground">
+                записей на странице
+              </span>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.max(1, p - 1))}
+                disabled={page === 1}
+              >
+                <IconChevronLeft className="h-4 w-4" />
+                Предыдущая
+              </Button>
+              <span className="text-sm text-muted-foreground">
+                Страница {page} из {totalPages}
+              </span>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages || totalPages === 0}
+              >
+                Следующая
+                <IconChevronRight className="h-4 w-4" />
+              </Button>
+            </div>
+          </div>
         )}
         </div>
       </div>
@@ -470,6 +587,17 @@ export default function SpecificationsPage() {
   )
 }
 
+/** Парсит дату из ответа 1С (строка или число), возвращает timestamp для сортировки. */
+function parseSpecDate(value: unknown): number {
+  if (value == null) return 0
+  if (typeof value === "number" && !Number.isNaN(value)) return value
+  const s = String(value).trim()
+  if (!s) return 0
+  const iso = s.includes("T") ? s : s.replace(/(\d{1,2})\.(\d{1,2})\.(\d{4})/, "$3-$2-$1")
+  const parsed = Date.parse(iso)
+  return Number.isNaN(parsed) ? 0 : parsed
+}
+
 function formatCell(value: unknown): string {
   if (value == null) return "—"
   if (typeof value === "object") return JSON.stringify(value)
@@ -483,7 +611,7 @@ function formatColumnLabel(key: string): string {
   return key
 }
 
-const codeCellClass = "py-2 text-sm text-muted-foreground font-mono"
+const codeCellClass = "text-sm text-muted-foreground font-mono"
 const codeCellStyle = { fontFamily: "var(--font-ibm-plex-mono), monospace" as const }
 
 function SpecificationDetail({ data }: { data: SpecificationRecord }) {
