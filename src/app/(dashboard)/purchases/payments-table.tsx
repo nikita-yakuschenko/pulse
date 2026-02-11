@@ -528,10 +528,10 @@ export function PaymentsTable() {
   }
 
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-3">
       {/* Filters - inline row */}
       <div
-        className="grid grid-cols-[auto_auto_auto_auto_auto_auto_1fr_auto] gap-x-3 gap-y-1.5 rounded-lg border border-border/50 bg-muted/30 p-3"
+        className="grid min-h-[5rem] grid-cols-[auto_auto_auto_auto_auto_auto_1fr_auto] gap-x-3 gap-y-1.5 rounded-lg border border-border/50 bg-muted/30 p-3"
         style={{ gridTemplateRows: "auto 32px" }}
       >
         {/* Строка 1: все метки. Строка 2: все контролы (высота 32px) */}
@@ -713,7 +713,7 @@ export function PaymentsTable() {
 
       {/* Table */}
       <div className="overflow-hidden rounded-lg border">
-        <Table>
+        <Table className="[&_tbody_td]:h-10 [&_tbody_td]:py-1">
           <TableHeader className="bg-muted">
             <TableRow>
               <TableHead className="w-[140px]">Дата</TableHead>
@@ -728,7 +728,7 @@ export function PaymentsTable() {
           <TableBody>
             {currentPayments.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={7} className="h-24 text-center">
+                <TableCell colSpan={7} className="!h-24 text-center">
                   <div className="flex flex-col items-center justify-center text-muted-foreground">
                     <p className="text-sm">Оплаты не найдены.</p>
                     <p className="mt-1 text-xs">Измените параметры фильтров или сбросьте их.</p>
