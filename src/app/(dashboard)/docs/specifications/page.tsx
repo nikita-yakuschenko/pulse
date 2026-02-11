@@ -23,11 +23,11 @@ import {
 import {
   Sheet,
   SheetContent,
-  SheetDescription,
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardHeader } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
 import { TableSkeleton } from "@/components/ui/table-skeleton"
 import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
 import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preference"
@@ -541,45 +541,36 @@ export default function SpecificationsPage() {
           className="flex flex-col p-0 overflow-hidden !w-[50vw] !max-w-[50vw] border-l"
           showCloseButton={false}
         >
-          {/* Шапка как у заказа: подпись + крупный код/наименование с копированием */}
-          <SheetHeader className="shrink-0 px-6 pr-12 pt-6 pb-4 border-b bg-muted/30">
-            <div className="flex items-baseline justify-between gap-4">
-              <SheetTitle className="text-base font-semibold tracking-tight text-muted-foreground">
-                Спецификация
+          {/* Заголовок: наименование крупно, под ним код с копированием */}
+          <SheetHeader className="shrink-0 px-6 pr-12 pt-6 pb-4 border-b">
+            <div className="flex flex-col gap-1">
+              <SheetTitle className="text-xl font-bold tracking-tight text-foreground">
+                {detailData
+                  ? String(detailData.Наименование ?? detailItem?.Наименование ?? detailItem?.Код ?? "Спецификация")
+                  : detailItem
+                    ? String(detailItem.Наименование ?? detailItem.Код ?? "Спецификация")
+                    : "Спецификация"}
               </SheetTitle>
-              {detailItem && (detailItem.Код != null || detailItem.Наименование != null) && (
+              {(detailData?.Код != null || detailItem?.Код != null) && (
                 <button
                   type="button"
                   onClick={(e) => {
                     e.preventDefault()
-                    const val = String(detailItem.Код ?? detailItem.Наименование ?? "")
-                    if (val) {
-                      navigator.clipboard.writeText(val)
-                      toast.success(
-                        detailItem.Код != null ? `Код ${val} скопирован` : `Скопировано: ${val}`
-                      )
+                    const code = String(detailData?.Код ?? detailItem?.Код ?? "")
+                    if (code) {
+                      navigator.clipboard.writeText(code)
+                      toast.success(`Код ${code} скопирован`)
                     }
                   }}
-                  className="inline-flex items-center gap-1.5 rounded px-1 -mr-1 hover:bg-muted transition-colors cursor-pointer group text-xl font-semibold tabular-nums tracking-tight max-w-[70%] truncate"
-                  style={
-                    detailItem?.Код != null
-                      ? { fontFamily: "var(--font-ibm-plex-mono), monospace" }
-                      : undefined
-                  }
-                  title={detailItem?.Код != null ? "Копировать код" : "Копировать"}
+                  className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group w-fit text-sm font-mono text-muted-foreground"
+                  style={codeCellStyle}
+                  title="Копировать код"
                 >
-                  <span className="truncate">
-                    {String(detailItem.Код ?? detailItem.Наименование ?? "")}
-                  </span>
-                  <IconCopy className="h-4 w-4 text-muted-foreground shrink-0" />
+                  <span>{String(detailData?.Код ?? detailItem?.Код ?? "")}</span>
+                  <IconCopy className="h-3.5 w-3.5 shrink-0" />
                 </button>
               )}
             </div>
-            {detailItem?.Наименование != null && detailItem?.Код != null && (
-              <SheetDescription className="text-sm mt-1">
-                {String(detailItem.Наименование)}
-              </SheetDescription>
-            )}
           </SheetHeader>
 
           {detailLoading ? (
@@ -621,98 +612,154 @@ function formatCell(value: unknown): string {
 function formatColumnLabel(key: string): string {
   if (key === "ДатаУтверждения") return "Дата утверждения"
   if (key === "ДатаПоставки") return "Дата поставки"
+  if (key === "НоменклатурнаяГруппа") return "Группа"
   return key
+}
+
+const MATERIAL_NAME_MAX_LENGTH = 70
+/** Ключи колонки «название материала» в таблице материалов (1С отдаёт «Материал») */
+const MATERIAL_NAME_KEYS = ["Материал", "Наименование", "Номенклатура", "Name"]
+const isMaterialNameKey = (k: string) =>
+  MATERIAL_NAME_KEYS.includes(k) || /Наименование|Номенклатура/i.test(k)
+const PRICE_SUM_KEYS = ["Цена", "Сумма"]
+
+/** Для колонок Цена/Сумма: число с двумя знаками после запятой */
+function formatPriceOrSum(value: unknown): string {
+  if (value == null) return "—"
+  const num = typeof value === "number" ? value : Number(value)
+  if (Number.isNaN(num)) return String(value)
+  return num.toFixed(2)
+}
+
+/** Название материала в таблице материалов — не более 80 символов в видимой части */
+function formatMaterialName(value: string): { display: string; full: string } {
+  const full = value || "—"
+  if (full.length <= MATERIAL_NAME_MAX_LENGTH) return { display: full, full }
+  return { display: full.slice(0, MATERIAL_NAME_MAX_LENGTH) + "…", full }
 }
 
 const codeCellClass = "text-sm text-muted-foreground font-mono"
 const codeCellStyle = { fontFamily: "var(--font-ibm-plex-mono), monospace" as const }
 
+/** Единый стиль заголовка блока в Sheet (Общие сведения, Материалы, Плановые расходы) */
+const blockTitleClass =
+  "text-[11px] font-medium uppercase tracking-wider text-muted-foreground"
+
+/** Общие сведения — только эти три поля в одну строку */
+const GENERAL_INFO_KEYS = ["Ответственный", "ДатаПоставки", "ДатаУтверждения"]
+
+/** Плановые расходы: ключ в данных 1С → подпись в интерфейсе */
+const PLANNED_EXPENSES_LABELS: Record<string, string> = {
+  СтоимостьРабот: "Монтажные работы",
+  СтоимостьТранспорт: "Логистика",
+  СтоимостьНакладные: "Накладные расходы",
+  СтоимостьАрендаСпецТехники: "Аренда спец. техники",
+  СтоимостьТехнологическиеПрисоединения: "Технологическое присоединение",
+  СтоимостьПроектныеРаботы: "Проектирование",
+}
+const PLANNED_EXPENSES_KEYS = Object.keys(PLANNED_EXPENSES_LABELS)
+
+/** Форматирование даты для отображения (DD.MM.YYYY) */
+function formatDateDisplay(value: unknown): string {
+  if (value == null) return "—"
+  const d = typeof value === "number" ? new Date(value) : new Date(String(value))
+  if (Number.isNaN(d.getTime())) return "—"
+  const day = String(d.getDate()).padStart(2, "0")
+  const month = String(d.getMonth() + 1).padStart(2, "0")
+  const year = d.getFullYear()
+  return `${day}.${month}.${year}`
+}
+
 function SpecificationDetail({ data }: { data: SpecificationRecord }) {
   const materials = (data.Материалы ?? data.Materials) as unknown
   const isMaterialsArray = Array.isArray(materials)
   const materialRows = isMaterialsArray ? materials as Record<string, unknown>[] : []
-  const restKeys = Object.keys(data).filter(
-    (k) => k !== "Материалы" && k !== "Materials"
-  )
 
   return (
     <>
-      {/* Карточка основных данных — сетка полей как у заказа */}
+      {/* Общие сведения — 3 колонки в одну строку */}
       <Card className="py-4">
         <CardContent className="pt-0 px-6 pb-0">
-          <div className="grid grid-cols-2 gap-x-8 gap-y-4">
-            {restKeys.map((key) => {
-              const value = formatCell(data[key])
-              const isCode = key === "Код"
-              return (
-                <div key={key} className="space-y-1">
-                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
-                    {formatColumnLabel(key)}
-                  </p>
-                  <p
-                    className="text-sm break-words font-normal"
-                    style={isCode ? codeCellStyle : undefined}
-                  >
-                    {isCode && value !== "—" ? (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          navigator.clipboard.writeText(value)
-                          toast.success(`Код ${value} скопирован`)
-                        }}
-                        className="inline-flex items-center gap-1 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group font-mono text-muted-foreground"
-                        title="Копировать код"
-                      >
-                        <span>{value}</span>
-                        <IconCopy className="h-3 w-3 text-muted-foreground shrink-0" />
-                      </button>
-                    ) : (
-                      value
-                    )}
-                  </p>
-                </div>
-              )
-            })}
+          <p className={blockTitleClass}>Общие сведения</p>
+          <Separator className="my-3" />
+          <div className="grid grid-cols-3 gap-x-8 gap-y-0">
+            {GENERAL_INFO_KEYS.map((key) => (
+              <div key={key} className="space-y-1">
+                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                  {formatColumnLabel(key)}
+                </p>
+                <p className="text-sm break-words font-normal">
+                  {key === "ДатаПоставки" || key === "ДатаУтверждения"
+                    ? formatDateDisplay(data[key])
+                    : formatCell(data[key])}
+                </p>
+              </div>
+            ))}
           </div>
         </CardContent>
       </Card>
 
       {materialRows.length > 0 && (
         <Card className="overflow-hidden gap-1.5 py-4">
-          <CardHeader className="py-0 pb-1.5 px-6">
-            <CardTitle className="text-xs font-medium tracking-tight text-muted-foreground uppercase">
+          <CardHeader className="py-0 px-6">
+            <p className={blockTitleClass}>
               Материалы
               <span className="ml-2 font-normal normal-case text-foreground">
                 {materialRows.length}
               </span>
-            </CardTitle>
+            </p>
+            <Separator className="my-3" />
           </CardHeader>
           <CardContent className="pt-0 px-6 pb-0">
             <div className="max-h-[26rem] overflow-y-auto rounded-lg border bg-muted/20 min-w-0">
               <Table>
                 <TableHeader className="bg-muted/50">
                   <TableRow>
-                    {Object.keys(materialRows[0]).map((k) => (
-                      <TableHead
-                        key={k}
-                        className={k === "Код" ? "w-[132px] min-w-[132px] max-w-[132px] whitespace-nowrap text-xs" : "whitespace-nowrap text-xs"}
-                      >
-                        {formatColumnLabel(k)}
-                      </TableHead>
-                    ))}
+                    {Object.keys(materialRows[0]).map((k) => {
+                      const isPriceOrSum = PRICE_SUM_KEYS.includes(k)
+                      const headClass =
+                        k === "Код"
+                          ? "w-[132px] min-w-[132px] max-w-[132px] whitespace-nowrap text-xs"
+                          : isPriceOrSum
+                            ? "whitespace-nowrap text-xs text-right"
+                            : "whitespace-nowrap text-xs"
+                      return (
+                        <TableHead key={k} className={headClass}>
+                          {formatColumnLabel(k)}
+                        </TableHead>
+                      )
+                    })}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {materialRows.map((row, i) => (
                     <TableRow key={i}>
                       {Object.keys(materialRows[0]).map((k) => {
-                        const cellVal = formatCell((row as Record<string, unknown>)[k])
+                        const raw = (row as Record<string, unknown>)[k]
+                        const cellVal = formatCell(raw)
                         const isCode = k === "Код"
+                        const isPriceOrSum = PRICE_SUM_KEYS.includes(k)
+                        const isNameColumn = isMaterialNameKey(k)
+                        const nameFormatted = isNameColumn ? formatMaterialName(cellVal) : null
+                        const cellClass = isCode
+                          ? "py-1.5 text-xs font-mono text-muted-foreground w-[132px] min-w-[132px] max-w-[132px]"
+                          : isPriceOrSum
+                            ? "py-1.5 text-xs text-right tabular-nums"
+                            : "py-1.5 text-xs"
+                        const displayValue = isPriceOrSum
+                          ? formatPriceOrSum(raw)
+                          : nameFormatted
+                            ? nameFormatted.display
+                            : cellVal
+                        const titleAttr = nameFormatted && nameFormatted.full !== nameFormatted.display
+                          ? nameFormatted.full
+                          : undefined
                         return (
                           <TableCell
                             key={k}
-                            className={isCode ? "py-1.5 text-xs font-mono text-muted-foreground w-[132px] min-w-[132px] max-w-[132px]" : "py-1.5 text-xs"}
+                            className={cellClass}
                             style={isCode ? codeCellStyle : undefined}
+                            title={titleAttr}
                           >
                             {isCode && cellVal !== "—" ? (
                               <button
@@ -729,7 +776,7 @@ function SpecificationDetail({ data }: { data: SpecificationRecord }) {
                                 <IconCopy className="h-3 w-3 text-muted-foreground shrink-0" />
                               </button>
                             ) : (
-                              cellVal
+                              displayValue
                             )}
                           </TableCell>
                         )
@@ -742,6 +789,31 @@ function SpecificationDetail({ data }: { data: SpecificationRecord }) {
           </CardContent>
         </Card>
       )}
+
+      {/* Плановые расходы — 6 статей в 2 ряда по 3 колонки */}
+      <Card className="py-4">
+        <CardContent className="pt-0 px-6 pb-0">
+          <p className={blockTitleClass}>Плановые расходы</p>
+          <Separator className="my-3" />
+          <div className="grid grid-cols-3 gap-x-8 gap-y-4">
+            {PLANNED_EXPENSES_KEYS.map((key) => {
+              const value = data[key]
+              const display =
+                value != null && (typeof value === "number" || !Number.isNaN(Number(value)))
+                  ? Number(value).toFixed(2)
+                  : formatCell(value)
+              return (
+                <div key={key} className="space-y-1">
+                  <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                    {PLANNED_EXPENSES_LABELS[key]}
+                  </p>
+                  <p className="text-sm font-normal tabular-nums">{display}</p>
+                </div>
+              )
+            })}
+          </div>
+        </CardContent>
+      </Card>
     </>
   )
 }
