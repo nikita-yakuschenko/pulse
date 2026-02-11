@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
+import { getSpecifications } from "@/integrations/1c"
 import { randomUUID } from "crypto"
 
 /**
@@ -41,14 +42,27 @@ export async function POST(
     }
 
     const body = await request.json().catch(() => ({}))
-    const specificationCode = typeof body.specificationCode === "string" ? body.specificationCode.trim() : ""
-    const specificationName = typeof body.specificationName === "string" ? body.specificationName.trim() || null : null
+    let specificationCode = typeof body.specificationCode === "string" ? body.specificationCode.trim() : ""
+    let specificationName = typeof body.specificationName === "string" ? body.specificationName.trim() || null : null
 
     if (!specificationCode) {
       return NextResponse.json(
         { error: "Укажите код спецификации (specificationCode)" },
         { status: 400 }
       )
+    }
+
+    if (!specificationName) {
+      try {
+        const metadata = (user.user_metadata || {}) as Record<string, unknown>
+        const raw = await getSpecifications(metadata, { code: specificationCode })
+        const list = Array.isArray(raw) ? raw : (raw && typeof raw === "object" && "data" in raw && Array.isArray((raw as { data?: unknown }).data)) ? (raw as { data: unknown[] }).data : []
+        const first = list[0] as Record<string, unknown> | undefined
+        const name = first && first.Наименование != null ? String(first.Наименование).trim() : null
+        if (name) specificationName = name
+      } catch (e) {
+        console.warn("[POST /api/mrp/reports/[id]/specifications] fetch name from 1C:", e)
+      }
     }
 
     const { data: existing } = await supabase

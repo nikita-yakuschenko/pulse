@@ -107,6 +107,8 @@ export async function POST(request: NextRequest) {
 
     const body = await request.json().catch(() => ({}))
     let title = typeof body.title === "string" ? body.title.trim() || null : null
+    const periodYear = typeof body.year === "number" ? body.year : typeof body.year === "string" ? parseInt(body.year, 10) : undefined
+    const periodMonth = typeof body.month === "number" ? body.month : typeof body.month === "string" ? parseInt(body.month, 10) : undefined
 
     if (!title) {
       const { count } = await supabase
@@ -115,13 +117,14 @@ export async function POST(request: NextRequest) {
         .eq("userId", user.id)
       const n = (count ?? 0) + 1
       const nowDate = new Date()
-      const year = nowDate.getFullYear() % 100
-      const month = nowDate.getMonth()
-      const firstDay = new Date(nowDate.getFullYear(), month, 1)
-      const lastDay = new Date(nowDate.getFullYear(), month + 1, 0)
+      const year = periodYear ?? nowDate.getFullYear()
+      const month = periodMonth !== undefined ? periodMonth - 1 : nowDate.getMonth()
+      const firstDay = new Date(year, month, 1)
+      const lastDay = new Date(year, month + 1, 0)
       const pad = (x: number) => String(x).padStart(2, "0")
-      const startStr = `${pad(firstDay.getDate())}.${pad(firstDay.getMonth() + 1)}.${pad(year)}`
-      const endStr = `${pad(lastDay.getDate())}.${pad(lastDay.getMonth() + 1)}.${pad(year)}`
+      const yearShort = year % 100
+      const startStr = `${pad(firstDay.getDate())}.${pad(firstDay.getMonth() + 1)}.${pad(yearShort)}`
+      const endStr = `${pad(lastDay.getDate())}.${pad(lastDay.getMonth() + 1)}.${pad(yearShort)}`
       title = `MRP-отчёт №${n} на период ${startStr} - ${endStr}`
     }
 
@@ -143,6 +146,38 @@ export async function POST(request: NextRequest) {
         { error: "Не удалось создать отчёт" },
         { status: 500 }
       )
+    }
+
+    const rawSpecs = Array.isArray(body.specifications)
+      ? body.specifications
+      : Array.isArray(body.specificationCodes)
+        ? (body.specificationCodes as string[]).filter((c): c is string => typeof c === "string" && c.trim() !== "").map((c) => ({ specificationCode: c.trim(), specificationName: null }))
+        : []
+    const specItems = rawSpecs
+      .map((s: unknown) => {
+        if (typeof s === "string") return { specificationCode: s.trim(), specificationName: null as string | null }
+        if (s && typeof s === "object" && "specificationCode" in s) {
+          const code = String((s as { specificationCode?: unknown }).specificationCode ?? "").trim()
+          const name = (s as { specificationName?: unknown }).specificationName
+          return {
+            specificationCode: code,
+            specificationName: typeof name === "string" ? name.trim() || null : null,
+          }
+        }
+        return null
+      })
+      .filter((s): s is { specificationCode: string; specificationName: string | null } => !!s && s.specificationCode !== "")
+    if (specItems.length > 0) {
+      const specs = specItems.map(({ specificationCode, specificationName }) => ({
+        id: randomUUID(),
+        reportId: report.id,
+        specificationCode,
+        specificationName,
+      }))
+      const { error: specError } = await supabase.from("mrp_report_specification").insert(specs)
+      if (specError) {
+        console.error("[POST /api/mrp/reports] insert specifications error:", specError)
+      }
     }
 
     return NextResponse.json({ data: report })

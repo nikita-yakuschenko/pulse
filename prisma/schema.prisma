@@ -252,15 +252,16 @@ model MrpReportSpecification {
 
 // Итоговая строка расчёта: потребность, остаток, к закупке (снимок на момент расчёта)
 model MrpReportResult {
-  id            String    @id @default(cuid())
-  reportId      String
-  materialCode  String
-  materialName  String
-  unit          String?
-  demandQty     Decimal   // Потребность (сумма по спецификациям)
-  balanceQty    Decimal   // Остаток на складе на момент расчёта
-  purchaseQty   Decimal   // К закупке = max(0, потребность - остаток)
-  report        MrpReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  id                String    @id @default(cuid())
+  reportId          String
+  materialCode      String
+  materialName      String
+  unit              String?
+  nomenclatureGroup String?  // Номенклатурная группа из ответа спецификаций (Материалы[].НоменклатурнаяГруппа)
+  demandQty         Decimal   // Потребность (сумма по спецификациям)
+  balanceQty        Decimal   // Остаток на складе на момент расчёта
+  purchaseQty       Decimal   // К закупке = max(0, потребность - остаток)
+  report            MrpReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
   @@map("mrp_report_result")
 }

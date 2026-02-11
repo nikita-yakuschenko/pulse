@@ -81,10 +81,20 @@ function buildCodeToNameAndUnit(nodes: TreeNode[] | null | undefined): { name: M
   return { name, unit }
 }
 
-function extractMaterials(spec: Record<string, unknown>): { code: string; name: string; qty: number; unit?: string }[] {
+/** Номенклатурная группа из строки материала (1С может отдавать разными ключами) */
+function getNomenclatureGroup(r: Record<string, unknown>): string | undefined {
+  const v =
+    r.НоменклатурнаяГруппа ??
+    (r as Record<string, unknown>).NomenclatureGroup ??
+    (r as Record<string, unknown>).номенклатурнаяГруппа
+  const s = typeof v === "string" ? v.trim() : ""
+  return s || undefined
+}
+
+function extractMaterials(spec: Record<string, unknown>): { code: string; name: string; qty: number; unit?: string; nomenclatureGroup?: string }[] {
   const raw = spec.Материалы ?? spec.Materials
   if (!Array.isArray(raw)) return []
-  const out: { code: string; name: string; qty: number; unit?: string }[] = []
+  const out: { code: string; name: string; qty: number; unit?: string; nomenclatureGroup?: string }[] = []
   for (const row of raw) {
     const r = row as Record<string, unknown>
     const code = String(r.Код ?? r.Code ?? "").trim()
@@ -95,7 +105,8 @@ function extractMaterials(spec: Record<string, unknown>): { code: string; name: 
     else if (typeof r.Quantity === "number") qty = r.Quantity
     else if (typeof r.Количество === "string") qty = parseFloat(r.Количество) || 0
     const unit = typeof r.ЕдиницаИзмерения === "string" ? r.ЕдиницаИзмерения : typeof r.Unit === "string" ? r.Unit : undefined
-    out.push({ code, name, qty, unit })
+    const nomenclatureGroup = getNomenclatureGroup(r)
+    out.push({ code, name, qty, unit, nomenclatureGroup: nomenclatureGroup || undefined })
   }
   return out
 }
@@ -152,7 +163,7 @@ export async function POST(
       )
     }
 
-    const demandByCode = new Map<string, { name: string; unit?: string; qty: number }>()
+    const demandByCode = new Map<string, { name: string; unit?: string; nomenclatureGroup?: string; qty: number }>()
 
     for (const spec of specList) {
       const raw = await getSpecifications(metadata, { code: spec.specificationCode, full: true }) as unknown[] | { data?: unknown[] } | null | undefined
@@ -165,7 +176,7 @@ export async function POST(
         if (cur) {
           cur.qty += m.qty
         } else {
-          demandByCode.set(m.code, { name: m.name, unit: m.unit, qty: m.qty })
+          demandByCode.set(m.code, { name: m.name, unit: m.unit, nomenclatureGroup: m.nomenclatureGroup, qty: m.qty })
         }
       }
     }
@@ -181,7 +192,7 @@ export async function POST(
     const balanceByCode = flattenBalancesToMap(filteredTree)
     const { name: codeToName, unit: codeToUnit } = buildCodeToNameAndUnit(filteredTree)
 
-    const results: { materialCode: string; materialName: string; unit: string | null; demandQty: number; balanceQty: number; purchaseQty: number }[] = []
+    const results: { materialCode: string; materialName: string; unit: string | null; nomenclatureGroup: string | null; demandQty: number; balanceQty: number; purchaseQty: number }[] = []
     for (const [code, d] of demandByCode) {
       const balanceQty = balanceByCode.get(code) ?? 0
       const purchaseQty = Math.max(0, d.qty - balanceQty)
@@ -191,6 +202,7 @@ export async function POST(
         materialCode: code,
         materialName,
         unit: materialUnit,
+        nomenclatureGroup: d.nomenclatureGroup ?? null,
         demandQty: d.qty,
         balanceQty,
         purchaseQty,
@@ -206,6 +218,7 @@ export async function POST(
         materialCode: r.materialCode,
         materialName: r.materialName,
         unit: r.unit,
+        nomenclatureGroup: r.nomenclatureGroup,
         demandQty: r.demandQty,
         balanceQty: r.balanceQty,
         purchaseQty: r.purchaseQty,
