@@ -47,6 +47,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import dynamic from "next/dynamic"
 import { cn } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/table-skeleton"
+import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
 import type { SupplierOrder, SupplierOrderAttachment } from "@/types/1c"
 import { OfficeViewer } from "@/components/office-viewer"
 
@@ -367,6 +369,11 @@ export function SupplierOrdersTable() {
   // Флаг завершения первоначальной загрузки (для useEffect-ов автоматической фильтрации)
   const isInitialLoadDone = useRef(false)
 
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const autoPageSize = useTableAutoPageSize(tableContainerRef)
+  const useAutoSize = pageSizeSelectValue === "auto" && autoPageSize > 0
+  const effectivePageSize = useAutoSize ? autoPageSize : pageSize
+
   // Накопленные опции для dropdown-ов (объединение по всем загрузкам), чтобы после применения фильтров можно было выбрать другой год/организацию/ответственного
   const optionsAccumulator = useRef({ 
     years: new Set<string>(), 
@@ -528,8 +535,8 @@ export function SupplierOrdersTable() {
     }
   }, [])
 
-  const startIdx = (page - 1) * pageSize
-  const endIdx = startIdx + pageSize
+  const startIdx = (page - 1) * effectivePageSize
+  const endIdx = startIdx + effectivePageSize
   
   // Клиентская фильтрация: организация, ответственный и поисковый запрос
   const filteredOrders = useMemo(() => {
@@ -556,9 +563,16 @@ export function SupplierOrdersTable() {
     })
   }, [orders, filterOrganization, filterResponsible, searchQuery])
   
-  const totalFilteredPages = Math.ceil(filteredOrders.length / pageSize)
+  const totalFilteredPages = Math.ceil(filteredOrders.length / effectivePageSize)
   const currentOrders = filteredOrders.slice(startIdx, endIdx)
   
+  // На мобильной ширине сбрасываем «Авто», чтобы не показывать несуществующую опцию
+  useEffect(() => {
+    if (autoPageSize === 0 && pageSizeSelectValue === "auto") {
+      setPageSizeSelectValue("17")
+    }
+  }, [autoPageSize, pageSizeSelectValue])
+
   // Сбрасываем страницу на 1 при изменении фильтров
   useEffect(() => {
     setPage(1)
@@ -778,13 +792,11 @@ export function SupplierOrdersTable() {
         />
       </div> */}
 
-      {/* Table: при загрузке — спиннер, иначе таблица и пагинация */}
+      {/* Table: при загрузке — скелетон, иначе таблица и пагинация. ref для авто-высоты на десктопе. */}
+      <div ref={tableContainerRef} className="flex flex-col gap-3">
       {loading ? (
         <div className="overflow-hidden rounded-lg border">
-          <div className="flex items-center justify-center py-12">
-            <IconLoader className="h-6 w-6 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-sm text-muted-foreground">Загрузка заказов...</span>
-          </div>
+          <TableSkeleton columnCount={6} rowCount={10} />
         </div>
       ) : (
         <>
@@ -860,13 +872,25 @@ export function SupplierOrdersTable() {
                 setPageSizeSelectValue("custom")
                 return
               }
+              if (value === "auto") {
+                setPageSizeSelectValue("auto")
+                setPage(1)
+                return
+              }
               setPageSizeAndSave(Number(value))
             }}
           >
             <SelectTrigger size="sm" className="h-8 w-[120px]">
-              <SelectValue placeholder="Выберите..." />
+              {pageSizeSelectValue === "auto" && autoPageSize > 0 ? (
+                <span>Авто ({autoPageSize})</span>
+              ) : (
+                <SelectValue placeholder="Выберите..." />
+              )}
             </SelectTrigger>
             <SelectContent>
+              {autoPageSize > 0 && (
+                <SelectItem value="auto">Авто ({autoPageSize})</SelectItem>
+              )}
               <SelectItem value="17">17</SelectItem>
               <SelectItem value="20">20</SelectItem>
               <SelectItem value="50">50</SelectItem>
@@ -920,6 +944,7 @@ export function SupplierOrdersTable() {
       </div>
         </>
       )}
+      </div>
 
       {/* Sheet — детали заказа или полноэкранный просмотр вложения */}
       <Sheet open={sheetOpen} onOpenChange={(open) => { 

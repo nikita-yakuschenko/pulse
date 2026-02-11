@@ -1,6 +1,6 @@
 "use client"
 
-import { useCallback, useEffect, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import {
   Table,
   TableBody,
@@ -30,6 +30,8 @@ import {
 import { IconBox, IconChevronLeft, IconChevronRight, IconLayoutGrid } from "@tabler/icons-react"
 import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
+import { TableSkeleton } from "@/components/ui/table-skeleton"
+import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
 import { TERRITORIES, MOCK_SCHEDULE_OBJECTS } from "@/lib/mock-construction-schedule"
 import type { ConstructionObject } from "@/types/construction-schedule"
 import { cn } from "@/lib/utils"
@@ -68,11 +70,18 @@ const STAGE_LABELS: Record<keyof ConstructionObject["stages"], string> = {
 const PAGE_SIZE_PRESETS = [17, 20, 50, 100, 200]
 
 export default function SchedulePage() {
+  const [loading, setLoading] = useState(true)
   const [filterPeriod, setFilterPeriod] = useState("2026-03")
   const [filterTerritory, setFilterTerritory] = useState(TERRITORY_ALL)
   const [filterType, setFilterType] = useState(TYPE_ALL)
   const [filterManager, setFilterManager] = useState(MANAGER_ALL)
   const [selectedObject, setSelectedObject] = useState<ConstructionObject | null>(null)
+
+  // Краткая начальная загрузка, чтобы показать скелетон (как на других разделах)
+  useEffect(() => {
+    const t = setTimeout(() => setLoading(false), 80)
+    return () => clearTimeout(t)
+  }, [])
 
   const uniqueManagers = useMemo(() => {
     const set = new Set(MOCK_SCHEDULE_OBJECTS.map((o) => o.manager).filter(Boolean))
@@ -82,6 +91,11 @@ export default function SchedulePage() {
   const [page, setPage] = useState(1)
   const [pageSize, setPageSize] = useState(17)
   const [pageSizeSelectValue, setPageSizeSelectValue] = useState("17")
+
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const autoPageSize = useTableAutoPageSize(tableContainerRef)
+  const useAutoSize = pageSizeSelectValue === "auto" && autoPageSize > 0
+  const effectivePageSize = useAutoSize ? autoPageSize : pageSize
 
   const setPageSizeAndSave = useCallback((n: number) => {
     const clamped = Math.max(1, Math.min(500, n))
@@ -99,9 +113,15 @@ export default function SchedulePage() {
     })
   }, [filterTerritory, filterType, filterManager])
 
-  const totalPages = Math.max(1, Math.ceil(filteredObjects.length / pageSize))
-  const startIdx = (page - 1) * pageSize
-  const currentPageObjects = filteredObjects.slice(startIdx, startIdx + pageSize)
+  const totalPages = Math.max(1, Math.ceil(filteredObjects.length / effectivePageSize))
+  const startIdx = (page - 1) * effectivePageSize
+  const currentPageObjects = filteredObjects.slice(startIdx, startIdx + effectivePageSize)
+
+  useEffect(() => {
+    if (autoPageSize === 0 && pageSizeSelectValue === "auto") {
+      setPageSizeSelectValue("17")
+    }
+  }, [autoPageSize, pageSizeSelectValue])
 
   useEffect(() => {
     if (filteredObjects.length > 0 && page > totalPages) setPage(1)
@@ -194,17 +214,23 @@ export default function SchedulePage() {
             </div>
           </div>
 
-          {/* Таблица */}
+          {/* Таблица: при загрузке — скелетон, иначе таблица и пагинация. ref для авто-высоты на десктопе. */}
+          <div ref={tableContainerRef} className="flex flex-col gap-3">
           <div className="rounded-md border overflow-hidden">
-            <ScheduleTable
-              objects={currentPageObjects}
-              onRowClick={openDetail}
-              formatAmount={formatAmount}
-            />
+            {loading ? (
+              <TableSkeleton columnCount={11} rowCount={10} />
+            ) : (
+              <ScheduleTable
+                objects={currentPageObjects}
+                onRowClick={openDetail}
+                formatAmount={formatAmount}
+              />
+            )}
+          </div>
           </div>
 
           {/* Пагинация */}
-          {filteredObjects.length > 0 && (
+          {!loading && filteredObjects.length > 0 && (
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2">
                 <Select
@@ -214,13 +240,25 @@ export default function SchedulePage() {
                       setPageSizeSelectValue("custom")
                       return
                     }
+                    if (value === "auto") {
+                      setPageSizeSelectValue("auto")
+                      setPage(1)
+                      return
+                    }
                     setPageSizeAndSave(Number(value))
                   }}
                 >
                   <SelectTrigger size="sm" className="h-8 w-[120px]">
-                    <SelectValue placeholder="Выберите..." />
+                    {pageSizeSelectValue === "auto" && autoPageSize > 0 ? (
+                      <span>Авто ({autoPageSize})</span>
+                    ) : (
+                      <SelectValue placeholder="Выберите..." />
+                    )}
                   </SelectTrigger>
                   <SelectContent>
+                    {autoPageSize > 0 && (
+                      <SelectItem value="auto">Авто ({autoPageSize})</SelectItem>
+                    )}
                     {PAGE_SIZE_PRESETS.map((n) => (
                       <SelectItem key={n} value={String(n)}>{n}</SelectItem>
                     ))}

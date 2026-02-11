@@ -46,6 +46,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import dynamic from "next/dynamic"
 import { cn } from "@/lib/utils"
+import { TableSkeleton } from "@/components/ui/table-skeleton"
+import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
 import type { Payment, PaymentDetails, SupplierOrderAttachment } from "@/types/1c"
 import { OfficeViewer } from "@/components/office-viewer"
 
@@ -310,6 +312,11 @@ export function PaymentsTable() {
   // Флаг завершения первоначальной загрузки (для useEffect-ов автоматической фильтрации)
   const isInitialLoadDone = useRef(false)
 
+  const tableContainerRef = useRef<HTMLDivElement>(null)
+  const autoPageSize = useTableAutoPageSize(tableContainerRef)
+  const useAutoSize = pageSizeSelectValue === "auto" && autoPageSize > 0
+  const effectivePageSize = useAutoSize ? autoPageSize : pageSize
+
   // Накопление уникальных значений для фильтров (чтобы не пересчитывать при каждом обновлении)
   const optionsAccumulator = useRef<{
     contractors: Set<string>
@@ -459,16 +466,23 @@ export function PaymentsTable() {
     return result
   }, [payments])
 
+  // На мобильной ширине сбрасываем «Авто»
+  useEffect(() => {
+    if (autoPageSize === 0 && pageSizeSelectValue === "auto") {
+      setPageSizeSelectValue("17")
+    }
+  }, [autoPageSize, pageSizeSelectValue])
+
   // Пагинация
-  const totalPages = Math.max(1, Math.ceil(filteredPayments.length / pageSize))
+  const totalPages = Math.max(1, Math.ceil(filteredPayments.length / effectivePageSize))
   // Сбрасываем страницу, если текущая страница больше общего количества страниц
   useEffect(() => {
     if (page > totalPages && totalPages > 0) {
       setPage(1)
     }
   }, [page, totalPages])
-  const startIndex = (page - 1) * pageSize
-  const endIndex = startIndex + pageSize
+  const startIndex = (page - 1) * effectivePageSize
+  const endIndex = startIndex + effectivePageSize
   const currentPayments = filteredPayments.slice(startIndex, endIndex)
 
   // Сброс всех фильтров — очищаем состояние и перезагружаем данные без фильтров
@@ -702,13 +716,11 @@ export function PaymentsTable() {
         </div>
       </div>
 
-      {/* Table: при загрузке — спиннер, иначе таблица и пагинация */}
+      {/* Table: при загрузке — скелетон, иначе таблица и пагинация. ref для авто-высоты на десктопе. */}
+      <div ref={tableContainerRef} className="flex flex-col gap-3">
       {loading ? (
         <div className="overflow-hidden rounded-lg border">
-          <div className="flex items-center justify-center py-12">
-            <IconLoader className="h-6 w-6 animate-spin text-muted-foreground" />
-            <span className="ml-2 text-sm text-muted-foreground">Загрузка оплат...</span>
-          </div>
+          <TableSkeleton columnCount={7} rowCount={10} />
         </div>
       ) : (
         <>
@@ -833,13 +845,25 @@ export function PaymentsTable() {
                 setPageSizeSelectValue("custom")
                 return
               }
+              if (value === "auto") {
+                setPageSizeSelectValue("auto")
+                setPage(1)
+                return
+              }
               setPageSizeAndSave(Number(value))
             }}
           >
             <SelectTrigger size="sm" className="h-8 w-[120px]">
-              <SelectValue placeholder="Выберите..." />
+              {pageSizeSelectValue === "auto" && autoPageSize > 0 ? (
+                <span>Авто ({autoPageSize})</span>
+              ) : (
+                <SelectValue placeholder="Выберите..." />
+              )}
             </SelectTrigger>
             <SelectContent>
+              {autoPageSize > 0 && (
+                <SelectItem value="auto">Авто ({autoPageSize})</SelectItem>
+              )}
               <SelectItem value="17">17</SelectItem>
               <SelectItem value="20">20</SelectItem>
               <SelectItem value="50">50</SelectItem>
@@ -893,6 +917,7 @@ export function PaymentsTable() {
       </div>
         </>
       )}
+      </div>
 
       {/* Sheet — детали заявки или полноэкранный просмотр вложения */}
       <Sheet open={sheetOpen} onOpenChange={(open) => { 
