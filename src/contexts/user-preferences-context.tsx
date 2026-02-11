@@ -22,7 +22,9 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
       .then((res) => (res.ok ? res.json() : {}))
       .then((data) => {
         if (!cancelled) {
-          setPreferences(typeof data === "object" && data !== null ? data : {})
+          const prefs: UserPreferences =
+            typeof data === "object" && data !== null ? (data as UserPreferences) : {}
+          setPreferences(prefs)
           setIsLoaded(true)
         }
       })
@@ -44,11 +46,15 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
       })
       if (!res.ok) {
         const data = await fetch("/api/profile/preferences").then((r) => (r.ok ? r.json() : {}))
-        setPreferences(typeof data === "object" && data !== null ? data : {})
+        const prefs: UserPreferences =
+          typeof data === "object" && data !== null ? (data as UserPreferences) : {}
+        setPreferences(prefs)
       }
     } catch {
       const data = await fetch("/api/profile/preferences").then((r) => (r.ok ? r.json() : {}))
-      setPreferences(typeof data === "object" && data !== null ? data : {})
+      const prefs: UserPreferences =
+        typeof data === "object" && data !== null ? (data as UserPreferences) : {}
+      setPreferences(prefs)
     }
   }, [])
 
