@@ -22,8 +22,9 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableSkeleton } from "@/components/ui/table-skeleton"
 import { Button } from "@/components/ui/button"
-import { IconLoader, IconPlus, IconTrash } from "@tabler/icons-react"
+import { IconPlus, IconTrash } from "@tabler/icons-react"
 
 type ReportRow = {
   id: string
@@ -135,17 +136,14 @@ export default function AnalyticsPage() {
 
         <div className="rounded-md border overflow-hidden">
           {loading ? (
-            <div className="flex items-center justify-center py-12">
-              <IconLoader className="h-6 w-6 animate-spin text-muted-foreground" />
-              <span className="ml-2 text-sm text-muted-foreground">Загрузка…</span>
-            </div>
+            <TableSkeleton columnCount={6} rowCount={10} />
           ) : list.length === 0 ? (
             <div className="py-12 text-center text-sm text-muted-foreground">
               Нет сохранённых отчётов. Нажмите «Создать отчёт», чтобы сформировать первый.
             </div>
           ) : (
-            <Table>
-              <TableHeader>
+            <Table className="[&_tbody_td]:h-10 [&_tbody_td]:py-1">
+              <TableHeader className="bg-muted">
                 <TableRow>
                   <TableHead className="w-[200px]">Название</TableHead>
                   <TableHead>Статус</TableHead>
@@ -159,7 +157,7 @@ export default function AnalyticsPage() {
                 {list.map((r) => (
                   <TableRow
                     key={r.id}
-                    className="cursor-pointer hover:bg-muted/50"
+                    className="cursor-pointer hover:bg-muted/50 transition-colors"
                     onClick={() => router.push(`/purchases/analytics/${r.id}`)}
                   >
                     <TableCell className="font-medium">
