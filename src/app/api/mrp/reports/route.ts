@@ -166,13 +166,14 @@ export async function POST(request: NextRequest) {
         }
         return null
       })
-      .filter((s): s is { specificationCode: string; specificationName: string | null } => !!s && s.specificationCode !== "")
+      .filter((s: { specificationCode: string; specificationName: string | null } | null): s is { specificationCode: string; specificationName: string | null } => !!s && s.specificationCode !== "")
     if (specItems.length > 0) {
-      const specs = specItems.map(({ specificationCode, specificationName }) => ({
+      type SpecItem = { specificationCode: string; specificationName: string | null }
+      const specs = specItems.map((item: SpecItem) => ({
         id: randomUUID(),
         reportId: report.id,
-        specificationCode,
-        specificationName,
+        specificationCode: item.specificationCode,
+        specificationName: item.specificationName,
       }))
       const { error: specError } = await supabase.from("mrp_report_specification").insert(specs)
       if (specError) {
