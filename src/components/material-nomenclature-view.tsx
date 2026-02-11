@@ -19,7 +19,7 @@ import {
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import type { MaterialTreeNode } from "@/types/1c"
-import { cn } from "@/lib/utils"
+import { cn, formatMaterialQty } from "@/lib/utils"
 import {
   Card,
   CardAction,
@@ -414,7 +414,7 @@ export function MaterialNomenclatureView() {
           <CardHeader>
             <CardDescription>Позиций в справочнике</CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {materialsLoading ? "—" : totalMaterials.toLocaleString("ru-RU")}
+              {materialsLoading ? "—" : formatMaterialQty(totalMaterials)}
             </CardTitle>
             <CardAction>
               <IconList className="size-4 text-muted-foreground" />
