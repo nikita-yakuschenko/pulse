@@ -1,24 +1,43 @@
 /**
  * Redis-клиент и кеш для данных приложения (1С и др.).
  * Если REDIS_URL не задан — кеш отключён (get возвращает null, set ничего не делает).
+ * При ошибке подключения (ENOTFOUND, ECONNREFUSED) клиент отключается и повтор не выполняется 60 с, чтобы не спамить логами.
  */
 
 import Redis from "ioredis"
 
 let redis: Redis | null = null
+/** После ошибки подключения не создаём новый клиент до этой метки времени (мс). */
+let redisBackoffUntil = 0
 
 function getRedis(): Redis | null {
   const url = process.env.REDIS_URL
   if (!url?.trim()) return null
+  if (Date.now() < redisBackoffUntil) return null
   if (redis) return redis
   try {
-    redis = new Redis(url, { maxRetriesPerRequest: 2 })
-    redis.on("error", (err) => {
-      console.warn("[redis] error:", err.message)
+    const client = new Redis(url, { maxRetriesPerRequest: 2 })
+    client.on("error", (err: NodeJS.ErrnoException) => {
+      const msg = err?.message ?? ""
+      const isConnectionError =
+        err?.code === "ENOTFOUND" ||
+        err?.code === "ECONNREFUSED" ||
+        err?.code === "ETIMEDOUT" ||
+        msg.includes("ENOTFOUND") ||
+        msg.includes("ECONNREFUSED")
+      if (isConnectionError) {
+        redisBackoffUntil = Date.now() + 60_000
+        console.warn("[redis] недоступен:", msg, "— кеш отключён на 1 мин. Проверьте REDIS_URL и сеть (в Docker имя хоста = имя сервиса Redis).")
+        client.quit().catch(() => {})
+        redis = null
+      } else {
+        console.warn("[redis] error:", msg)
+      }
     })
-    redis.on("connect", () => {
+    client.on("connect", () => {
       console.log("[redis] connected")
     })
+    redis = client
     return redis
   } catch {
     return null
