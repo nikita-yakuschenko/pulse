@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
 import { toast } from "sonner"
-import { formatUnit } from "@/lib/utils"
+import { formatMaterialQty, formatUnit } from "@/lib/utils"
 import {
   Table,
   TableBody,
@@ -288,7 +288,7 @@ function OrderLinesSection({ title, items }: { title: string; items: OrderLineIt
                     <div className="text-xs text-muted-foreground">{item.ХарактеристикаНоменклатуры}</div>
                   ) : null}
                 </div>
-                <span className="text-right tabular-nums shrink-0">{item.Количество}</span>
+                <span className="text-right tabular-nums shrink-0">{formatMaterialQty(item.Количество)}</span>
                 <span className="text-right text-muted-foreground text-xs shrink-0">{formatUnit(unit(item))}</span>
                 <span className="text-right tabular-nums text-muted-foreground text-xs whitespace-nowrap shrink-0">{formatSum(item.Цена)}</span>
                 <span className="text-right tabular-nums font-semibold whitespace-nowrap shrink-0">{formatSum(item.Сумма)}</span>

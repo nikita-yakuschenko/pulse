@@ -28,7 +28,7 @@ import {
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import type { WarehouseBalance, MaterialTreeNode } from "@/types/1c"
-import { cn, formatUnit } from "@/lib/utils"
+import { cn, formatMaterialQty, formatUnit } from "@/lib/utils"
 import {
   Card,
   CardAction,
@@ -859,7 +859,7 @@ export function WarehouseBalanceView() {
           <CardHeader>
             <CardDescription>Всего единиц</CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {totalQty.toLocaleString("ru-RU")}
+              {formatMaterialQty(totalQty)}
             </CardTitle>
             <CardAction>
               <IconBox className="size-4 text-muted-foreground" />
@@ -878,7 +878,7 @@ export function WarehouseBalanceView() {
           <CardHeader>
             <CardDescription>Позиций номенклатуры</CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {uniqueItems.toLocaleString("ru-RU")}
+              {formatMaterialQty(uniqueItems)}
             </CardTitle>
             <CardAction>
               <IconList className="size-4 text-muted-foreground" />
@@ -903,7 +903,7 @@ export function WarehouseBalanceView() {
           <CardHeader>
             <CardDescription>Точки заказа</CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {reachedReorderPoints.toLocaleString("ru-RU")}
+              {formatMaterialQty(reachedReorderPoints)}
             </CardTitle>
             <CardAction>
               <IconAlertTriangle className="size-4 text-muted-foreground" />
@@ -922,7 +922,7 @@ export function WarehouseBalanceView() {
           <CardHeader>
             <CardDescription>Средний остаток на позицию</CardDescription>
             <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {avgPerItem.toLocaleString("ru-RU")}
+              {formatMaterialQty(avgPerItem)}
             </CardTitle>
             <CardAction>
               <IconMathAvg className="size-4 text-muted-foreground" />
@@ -1383,7 +1383,7 @@ export function WarehouseBalanceView() {
                   </div>
                             </TableCell>
                             <TableCell className="align-middle py-1 text-right tabular-nums">
-                              {!isGroup ? totalQty.toLocaleString("ru-RU") : null}
+                              {!isGroup ? formatMaterialQty(totalQty) : null}
                             </TableCell>
                             <TableCell className="align-middle py-1 text-muted-foreground">
                               {!isGroup ? formatUnit(node.ЕдиницаИзмерения) : null}
@@ -1488,10 +1488,10 @@ export function WarehouseBalanceView() {
                           </TableCell>
                           <TableCell className="font-medium">{point.itemName}</TableCell>
                           <TableCell className="text-right tabular-nums">
-                            {Number(point.reorderQuantity).toLocaleString("ru-RU")}
+                            {formatMaterialQty(Number(point.reorderQuantity))}
                           </TableCell>
                           <TableCell className="text-right tabular-nums">
-                            {currentQty.toLocaleString("ru-RU")}
+                            {formatMaterialQty(currentQty)}
                           </TableCell>
                           <TableCell className="text-right">
                             <span
@@ -1507,7 +1507,7 @@ export function WarehouseBalanceView() {
                               {diff > 0 && <IconCaretUpFilled className="h-3 w-3" aria-hidden />}
                               {diff < 0 && <IconCaretDownFilled className="h-3 w-3" aria-hidden />}
                             {diff > 0 ? "+" : ""}
-                            {diff.toLocaleString("ru-RU")}
+                            {formatMaterialQty(diff)}
                             </span>
                           </TableCell>
                           <TableCell className="text-muted-foreground">
@@ -1768,7 +1768,7 @@ export function WarehouseBalanceView() {
                             <TableRow key={code}>
                               <TableCell className="font-mono text-muted-foreground text-sm py-2" style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}>{code}</TableCell>
                               <TableCell className="text-sm py-2">{name}</TableCell>
-                              <TableCell className="text-right tabular-nums text-sm py-2">{qty.toLocaleString("ru-RU")}</TableCell>
+                              <TableCell className="text-right tabular-nums text-sm py-2">{formatMaterialQty(qty)}</TableCell>
                               <TableCell className="text-muted-foreground text-sm py-2">{formatUnit(unit)}</TableCell>
                             </TableRow>
                           )
@@ -1779,7 +1779,7 @@ export function WarehouseBalanceView() {
             </div>
             {detailsPoint && (
               <div className="flex flex-col gap-1 text-sm text-muted-foreground">
-                <span>Точка заказа: {Number(detailsPoint.reorderQuantity).toLocaleString("ru-RU")} {formatUnit(detailsPoint.unit)}</span>
+                <span>Точка заказа: {formatMaterialQty(Number(detailsPoint.reorderQuantity))} {formatUnit(detailsPoint.unit)}</span>
                 {(detailsPoint.isGroup && (detailsPoint.itemCodes?.length ?? 0) > 1) && (
                   <span>В группе: {(detailsPoint.itemCodes ?? []).length} позиций</span>
                 )}

@@ -7,7 +7,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { formatUnit } from "@/lib/utils"
+import { formatMaterialQty, formatUnit } from "@/lib/utils"
 
 export type ReorderAlertItem = {
   id: string
@@ -45,10 +45,10 @@ function NotificationItem({ item }: NotificationItemProps) {
             </div>
           </div>
           <div className="rounded-lg bg-muted p-2.5 text-sm tracking-tight text-muted-foreground">
-            Текущий остаток: {item.currentQty.toLocaleString("ru-RU")} {formatUnit(item.unit)}.
+            Текущий остаток: {formatMaterialQty(item.currentQty)} {formatUnit(item.unit)}.
             Рекомендуется заказать не менее{" "}
             <span className="font-semibold text-foreground">
-              {deficit.toLocaleString("ru-RU")} {formatUnit(item.unit)}
+              {formatMaterialQty(deficit)} {formatUnit(item.unit)}
             </span>
           </div>
         </div>

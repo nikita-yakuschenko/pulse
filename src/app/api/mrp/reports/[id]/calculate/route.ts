@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getSpecifications, getWarehouseBalances, getWarehouses } from "@/integrations/1c"
+import { roundMaterialQty } from "@/lib/utils"
 import { randomUUID } from "crypto"
 
 const MAIN_WAREHOUSE_CODE = "000000007"
@@ -81,6 +82,12 @@ function buildCodeToNameAndUnit(nodes: TreeNode[] | null | undefined): { name: M
   return { name, unit }
 }
 
+/** Нормализация кода материала (trim + без ведущих нулей) для единой агрегации и совпадения с разбивкой */
+function normalizeMaterialCode(code: string): string {
+  const s = code.trim()
+  return s.replace(/^0+/, "") || s
+}
+
 /** Номенклатурная группа из строки материала (1С может отдавать разными ключами) */
 function getNomenclatureGroup(r: Record<string, unknown>): string | undefined {
   const v =
@@ -143,9 +150,9 @@ export async function POST(
       return NextResponse.json({ error: "Отчёт не найден" }, { status: 404 })
     }
 
-    if (report.status !== "draft") {
+    if (report.status !== "draft" && report.status !== "computed") {
       return NextResponse.json(
-        { error: "Расчёт выполняется только для черновика" },
+        { error: "Пересчёт доступен только для черновика или рассчитанного отчёта" },
         { status: 400 }
       )
     }
@@ -163,7 +170,7 @@ export async function POST(
       )
     }
 
-    const demandByCode = new Map<string, { name: string; unit?: string; nomenclatureGroup?: string; qty: number }>()
+    const demandByCode = new Map<string, { code: string; name: string; unit?: string; nomenclatureGroup?: string; qty: number }>()
 
     for (const spec of specList) {
       const raw = await getSpecifications(metadata, { code: spec.specificationCode, full: true }) as unknown[] | { data?: unknown[] } | null | undefined
@@ -172,11 +179,12 @@ export async function POST(
       if (!one) continue
       const materials = extractMaterials(one)
       for (const m of materials) {
-        const cur = demandByCode.get(m.code)
+        const key = normalizeMaterialCode(m.code)
+        const cur = demandByCode.get(key)
         if (cur) {
           cur.qty += m.qty
         } else {
-          demandByCode.set(m.code, { name: m.name, unit: m.unit, nomenclatureGroup: m.nomenclatureGroup, qty: m.qty })
+          demandByCode.set(key, { code: m.code, name: m.name, unit: m.unit, nomenclatureGroup: m.nomenclatureGroup, qty: m.qty })
         }
       }
     }
@@ -192,18 +200,32 @@ export async function POST(
     const balanceByCode = flattenBalancesToMap(filteredTree)
     const { name: codeToName, unit: codeToUnit } = buildCodeToNameAndUnit(filteredTree)
 
+    const getBalance = (code: string): number => {
+      const n = normalizeMaterialCode(code)
+      const direct = balanceByCode.get(code) ?? balanceByCode.get(n)
+      if (direct != null) return direct
+      for (const [k, v] of balanceByCode) if (normalizeMaterialCode(k) === n) return v
+      return 0
+    }
+    const getFromMap = <V>(map: Map<string, V>, code: string): V | undefined => {
+      const n = normalizeMaterialCode(code)
+      return map.get(code) ?? map.get(n) ?? (() => { for (const [k, v] of map) if (normalizeMaterialCode(k) === n) return v; return undefined })()
+    }
+
     const results: { materialCode: string; materialName: string; unit: string | null; nomenclatureGroup: string | null; demandQty: number; balanceQty: number; purchaseQty: number }[] = []
-    for (const [code, d] of demandByCode) {
-      const balanceQty = balanceByCode.get(code) ?? 0
-      const purchaseQty = Math.max(0, d.qty - balanceQty)
-      const materialName = codeToName.get(code) ?? d.name
-      const materialUnit = codeToUnit.get(code) ?? d.unit ?? null
+    for (const [_normCode, d] of demandByCode) {
+      const displayCode = d.code
+      const balanceQty = roundMaterialQty(getBalance(displayCode))
+      const demandQtyRounded = roundMaterialQty(d.qty)
+      const purchaseQty = roundMaterialQty(Math.max(0, demandQtyRounded - balanceQty))
+      const materialName = getFromMap(codeToName, displayCode) ?? d.name
+      const materialUnit = getFromMap(codeToUnit, displayCode) ?? d.unit ?? null
       results.push({
-        materialCode: code,
+        materialCode: displayCode,
         materialName,
         unit: materialUnit,
         nomenclatureGroup: d.nomenclatureGroup ?? null,
-        demandQty: d.qty,
+        demandQty: demandQtyRounded,
         balanceQty,
         purchaseQty,
       })

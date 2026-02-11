@@ -4,7 +4,7 @@ import React, { useCallback, useEffect, useMemo, useState } from "react"
 import { useParams, useRouter } from "next/navigation"
 import Link from "next/link"
 import { toast } from "sonner"
-import { IconArrowLeft, IconLoader, IconPlus, IconTrash } from "@tabler/icons-react"
+import { IconArrowLeft, IconChevronDown, IconChevronRight, IconCopy, IconLoader, IconPlus, IconTrash } from "@tabler/icons-react"
 
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -17,7 +17,13 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { formatUnit } from "@/lib/utils"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import { formatMaterialQty, formatUnit } from "@/lib/utils"
 
 type ReportResultRow = {
   id: string
@@ -85,6 +91,38 @@ export default function MrpReportDetailsPage() {
   const [newSpecCode, setNewSpecCode] = useState("")
   const [addingSpec, setAddingSpec] = useState(false)
   const [deletingSpecId, setDeletingSpecId] = useState<string | null>(null)
+  const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set())
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const [selectedMaterial, setSelectedMaterial] = useState<ReportResultRow | null>(null)
+  const [breakdown, setBreakdown] = useState<{ specificationCode: string; specificationName: string | null; quantity: number }[] | null>(null)
+  const [breakdownLoading, setBreakdownLoading] = useState(false)
+
+  const openMaterialSheet = useCallback((row: ReportResultRow) => {
+    setSelectedMaterial(row)
+    setSheetOpen(true)
+    setBreakdown(null)
+  }, [])
+
+  useEffect(() => {
+    if (!sheetOpen || !selectedMaterial || !reportId) return
+    setBreakdownLoading(true)
+    const code = encodeURIComponent(selectedMaterial.materialCode)
+    fetch(`/api/mrp/reports/${reportId}/breakdown?materialCode=${code}`)
+      .then((res) => res.json())
+      .then((json: { error?: string; data?: { specificationCode: string; specificationName: string | null; quantity: number }[] }) => {
+        if (json.error) {
+          toast.error(json.error)
+          setBreakdown([])
+        } else {
+          setBreakdown(json.data ?? [])
+        }
+      })
+      .catch((e) => {
+        toast.error(e instanceof Error ? e.message : "Ошибка загрузки")
+        setBreakdown([])
+      })
+      .finally(() => setBreakdownLoading(false))
+  }, [sheetOpen, selectedMaterial?.materialCode, reportId])
 
   const loadReport = useCallback(async () => {
     setLoading(true)
@@ -390,15 +428,44 @@ export default function MrpReportDetailsPage() {
                   {groupKeys.map((groupKey) => {
                     const groupRows = (byGroup.get(groupKey) ?? []).sort((a, b) => (a.purchaseQty === 0 ? 1 : 0) - (b.purchaseQty === 0 ? 1 : 0))
                     const groupLabel = groupKey === "\u200b" ? "Без группы" : groupKey
+                    const isCollapsed = collapsedGroups.has(groupKey)
+                    const toggleGroup = () => {
+                      setCollapsedGroups((prev) => {
+                        const next = new Set(prev)
+                        if (next.has(groupKey)) next.delete(groupKey)
+                        else next.add(groupKey)
+                        return next
+                      })
+                    }
                     return (
                       <React.Fragment key={groupKey}>
                         <TableRow className="bg-muted/50 hover:bg-muted/50">
                           <TableCell colSpan={6} className="font-medium py-2">
-                            {groupLabel}
+                            <button
+                              type="button"
+                              onClick={toggleGroup}
+                              className="flex items-center gap-2 text-left hover:opacity-80"
+                              aria-expanded={!isCollapsed}
+                            >
+                              {isCollapsed ? (
+                                <IconChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              ) : (
+                                <IconChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              )}
+                              <span>{groupLabel}</span>
+                              <span className="text-muted-foreground font-normal">({groupRows.length})</span>
+                            </button>
                           </TableCell>
                         </TableRow>
-                        {groupRows.map((row) => (
-                          <TableRow key={row.id}>
+                        {!isCollapsed && groupRows.map((row) => (
+                          <TableRow
+                            key={row.id}
+                            role="button"
+                            tabIndex={0}
+                            className="cursor-pointer hover:bg-muted/50"
+                            onClick={() => openMaterialSheet(row)}
+                            onKeyDown={(e) => e.key === "Enter" && openMaterialSheet(row)}
+                          >
                             <TableCell className="font-mono text-xs">
                               {row.materialCode}
                             </TableCell>
@@ -409,13 +476,13 @@ export default function MrpReportDetailsPage() {
                               {formatUnit(row.unit) || "—"}
                             </TableCell>
                             <TableCell className="text-right">
-                              {row.demandQty.toLocaleString("ru-RU")}
+                              {formatMaterialQty(row.demandQty)}
                             </TableCell>
                             <TableCell className="text-right">
-                              {row.balanceQty.toLocaleString("ru-RU")}
+                              {formatMaterialQty(row.balanceQty)}
                             </TableCell>
                             <TableCell className="text-right font-semibold">
-                              {row.purchaseQty.toLocaleString("ru-RU")}
+                              {formatMaterialQty(row.purchaseQty)}
                             </TableCell>
                           </TableRow>
                         ))}
@@ -428,6 +495,79 @@ export default function MrpReportDetailsPage() {
           )}
         </>
       )}
+
+      <Sheet open={sheetOpen} onOpenChange={(open) => { setSheetOpen(open); if (!open) setSelectedMaterial(null) }}>
+        <SheetContent side="right" className="flex flex-col p-0 overflow-hidden !w-[50vw] !max-w-[50vw] border-l">
+          <SheetHeader className="shrink-0 px-6 pr-12 pt-6 pb-4 border-b bg-muted/30">
+            <div className="flex flex-col gap-1">
+              {selectedMaterial && (
+                <>
+                  <SheetTitle className="text-base font-semibold tracking-tight">
+                    {selectedMaterial.materialName}
+                  </SheetTitle>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (selectedMaterial.materialCode) {
+                        navigator.clipboard.writeText(selectedMaterial.materialCode)
+                        toast.success(`Код ${selectedMaterial.materialCode} скопирован`)
+                      }
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded px-0 -ml-0.5 hover:bg-muted transition-colors cursor-pointer group text-sm font-mono tabular-nums text-muted-foreground hover:text-foreground w-fit"
+                    title="Копировать код"
+                  >
+                    <span className="truncate">{selectedMaterial.materialCode}</span>
+                    <IconCopy className="h-3.5 w-3.5 shrink-0 opacity-70 group-hover:opacity-100" />
+                  </button>
+                </>
+              )}
+            </div>
+          </SheetHeader>
+          <div className="flex-1 overflow-y-auto px-6 py-4">
+            {breakdownLoading ? (
+              <div className="flex items-center justify-center py-16 gap-2">
+                <IconLoader className="h-5 w-5 animate-spin text-muted-foreground" />
+                <span className="text-sm text-muted-foreground">Загрузка...</span>
+              </div>
+            ) : breakdown && breakdown.length > 0 ? (
+              <>
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-[120px]">Код</TableHead>
+                      <TableHead>Наименование</TableHead>
+                      <TableHead className="w-[100px] text-right">Количество</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {breakdown.map((item) => (
+                      <TableRow key={item.specificationCode}>
+                        <TableCell className="font-mono text-xs">{item.specificationCode}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{item.specificationName ?? "—"}</TableCell>
+                        <TableCell className="text-right tabular-nums">{formatMaterialQty(item.quantity)}</TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+                {selectedMaterial && (() => {
+                  const sum = breakdown.reduce((s, i) => s + i.quantity, 0)
+                  return (
+                    <div className="mt-4 pt-4 border-t flex items-baseline justify-end gap-2 text-sm">
+                      <span className="text-muted-foreground">Итого:</span>
+                      <span className="font-semibold tabular-nums">{formatMaterialQty(sum)}</span>
+                      {selectedMaterial.unit && (
+                        <span className="text-muted-foreground">{formatUnit(selectedMaterial.unit)}</span>
+                      )}
+                    </div>
+                  )
+                })()}
+              </>
+            ) : breakdown && breakdown.length === 0 ? (
+              <p className="text-sm text-muted-foreground py-8">Нет данных по спецификациям.</p>
+            ) : null}
+          </div>
+        </SheetContent>
+      </Sheet>
     </div>
   )
 }
