@@ -55,6 +55,7 @@ const ENABLED_URLS = new Set([
   "/docs/projects",
   "/dashboard/warehouse/balance",
   "/dashboard/warehouse/materials",
+  "/dashboard/construction/schedule",
 ])
 
 const procurementCollapsibleItems = [
