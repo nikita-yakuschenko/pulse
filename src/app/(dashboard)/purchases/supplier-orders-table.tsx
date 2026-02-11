@@ -49,6 +49,7 @@ import dynamic from "next/dynamic"
 import { cn } from "@/lib/utils"
 import { TableSkeleton } from "@/components/ui/table-skeleton"
 import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
+import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preference"
 import type { SupplierOrder, SupplierOrderAttachment } from "@/types/1c"
 import { OfficeViewer } from "@/components/office-viewer"
 
@@ -308,32 +309,20 @@ export function SupplierOrdersTable() {
   const [orders, setOrders] = useState<SupplierOrder[]>([])
   const [searchQuery, setSearchQuery] = useState("")
   const [page, setPage] = useState(1)
-  const PAGE_SIZE_PRESETS = [17, 20, 50, 100, 200]
-  const [pageSize, setPageSize] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("supplier-orders-page-size")
-      const n = saved ? Number(saved) : 17
-      return n >= 1 && n <= 500 ? n : 17
-    }
-    return 17
-  })
-  // Отдельный state для селекта: при выборе «Своё» должен показываться «custom», иначе Radix не переключает
-  const [pageSizeSelectValue, setPageSizeSelectValue] = useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("supplier-orders-page-size")
-      const n = saved ? Number(saved) : 17
-      return PAGE_SIZE_PRESETS.includes(n) ? String(n) : "custom"
-    }
-    return "17"
-  })
-
-  const setPageSizeAndSave = useCallback((n: number) => {
-    const clamped = Math.max(1, Math.min(500, n))
-    setPageSize(clamped)
-    setPage(1)
-    setPageSizeSelectValue(PAGE_SIZE_PRESETS.includes(clamped) ? String(clamped) : "custom")
-    localStorage.setItem("supplier-orders-page-size", String(clamped))
-  }, [])
+  const {
+    pageSize,
+    pageSizeSelectValue,
+    setPageSizeAndSave: setPageSizeAndSaveBase,
+    setPageSizeSelectValue,
+    PAGE_SIZE_PRESETS,
+  } = useTablePageSizePreference("supplier-orders-page-size")
+  const setPageSizeAndSave = useCallback(
+    (n: number) => {
+      setPageSizeAndSaveBase(n)
+      setPage(1)
+    },
+    [setPageSizeAndSaveBase]
+  )
 
   // Фильтры для API (серверная фильтрация)
   const [filterCode, setFilterCode] = useState("")

@@ -11,6 +11,8 @@ import {
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { MfaVerifyForm } from "@/components/mfa-verify-form"
+import { UserPreferencesProvider } from "@/contexts/user-preferences-context"
+import { ThemeSync } from "@/components/theme-sync"
 
 type MfaStatus = {
   needsMfa: boolean
@@ -86,18 +88,21 @@ export function DashboardGate({
     )
   }
 
-  // 2FA пройдена — рендерим полный интерфейс дашборда
+  // 2FA пройдена — рендерим полный интерфейс дашборда с провайдером настроек (тема, размер таблиц)
   return (
-    <SidebarProvider style={sidebarStyle}>
-      <AppSidebar variant="inset" user={userProp} />
-      <SidebarInset>
-        <SiteHeader />
-        <div className="flex flex-1 flex-col">
-          <div className="@container/main flex flex-1 flex-col gap-2">
-            {children}
+    <UserPreferencesProvider>
+      <ThemeSync />
+      <SidebarProvider style={sidebarStyle}>
+        <AppSidebar variant="inset" user={userProp} />
+        <SidebarInset>
+          <SiteHeader />
+          <div className="flex flex-1 flex-col">
+            <div className="@container/main flex flex-1 flex-col gap-2">
+              {children}
+            </div>
           </div>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+        </SidebarInset>
+      </SidebarProvider>
+    </UserPreferencesProvider>
   )
 }

@@ -32,6 +32,7 @@ import { Badge } from "@/components/ui/badge"
 import { Separator } from "@/components/ui/separator"
 import { TableSkeleton } from "@/components/ui/table-skeleton"
 import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
+import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preference"
 import { TERRITORIES, MOCK_SCHEDULE_OBJECTS } from "@/lib/mock-construction-schedule"
 import type { ConstructionObject } from "@/types/construction-schedule"
 import { cn } from "@/lib/utils"
@@ -89,20 +90,25 @@ export default function SchedulePage() {
   }, [])
   const [sheetOpen, setSheetOpen] = useState(false)
   const [page, setPage] = useState(1)
-  const [pageSize, setPageSize] = useState(17)
-  const [pageSizeSelectValue, setPageSizeSelectValue] = useState("17")
+  const {
+    pageSize,
+    pageSizeSelectValue,
+    setPageSizeAndSave: setPageSizeAndSaveBase,
+    setPageSizeSelectValue,
+    PAGE_SIZE_PRESETS,
+  } = useTablePageSizePreference("construction-schedule-page-size")
+  const setPageSizeAndSave = useCallback(
+    (n: number) => {
+      setPageSizeAndSaveBase(n)
+      setPage(1)
+    },
+    [setPageSizeAndSaveBase]
+  )
 
   const tableContainerRef = useRef<HTMLDivElement>(null)
   const autoPageSize = useTableAutoPageSize(tableContainerRef)
   const useAutoSize = pageSizeSelectValue === "auto" && autoPageSize > 0
   const effectivePageSize = useAutoSize ? autoPageSize : pageSize
-
-  const setPageSizeAndSave = useCallback((n: number) => {
-    const clamped = Math.max(1, Math.min(500, n))
-    setPageSize(clamped)
-    setPage(1)
-    setPageSizeSelectValue(PAGE_SIZE_PRESETS.includes(clamped) ? String(clamped) : "custom")
-  }, [])
 
   const filteredObjects = useMemo(() => {
     return MOCK_SCHEDULE_OBJECTS.filter((o) => {

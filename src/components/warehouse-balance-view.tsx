@@ -85,10 +85,11 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preference"
+import { useUserPreferences } from "@/contexts/user-preferences-context"
 
 const PAGE_SIZE_PRESETS = [17, 20, 50, 100, 200] as const
-const STORAGE_KEY = "warehouse-balance-page-size"
-const TAB_STORAGE_KEY = "warehouse-balance-tab"
+const TAB_PREFERENCE_KEY = "warehouse-balance-tab"
 
 /** Совпадение по полному или частичному наименованию (без учёта регистра) */
 function nodeMatchesSearch(node: MaterialTreeNode, query: string): boolean {
@@ -339,28 +340,44 @@ export function WarehouseBalanceView() {
   const [loading, setLoading] = React.useState(true)
   const [error, setError] = React.useState<string | null>(null)
   const [page, setPage] = React.useState(1)
-  const [pageSize, setPageSize] = React.useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      const n = saved ? Number(saved) : 17
-      return n >= 1 && n <= 500 ? n : 17
+  const {
+    pageSize,
+    pageSizeSelectValue,
+    setPageSizeAndSave: setPageSizeAndSaveBase,
+    setPageSizeSelectValue,
+  } = useTablePageSizePreference("warehouse-balance-page-size")
+  const setPageSizeAndSave = React.useCallback(
+    (n: number) => {
+      setPageSizeAndSaveBase(n)
+      setPage(1)
+    },
+    [setPageSizeAndSaveBase]
+  )
+  const { preferences, setPreference, isLoaded: prefsLoadedTab } = useUserPreferences()
+  const [activeTab, setActiveTabState] = React.useState<"available" | "reorder">("available")
+  const activeTabSynced = React.useRef(false)
+  React.useEffect(() => {
+    if (!prefsLoadedTab || activeTabSynced.current) return
+    const saved = preferences[TAB_PREFERENCE_KEY]
+    if (saved === "available" || saved === "reorder") {
+      setActiveTabState(saved)
+      activeTabSynced.current = true
     }
-    return 17
-  })
+  }, [prefsLoadedTab, preferences[TAB_PREFERENCE_KEY]])
+  const setActiveTab = React.useCallback(
+    (v: "available" | "reorder") => {
+      setActiveTabState(v)
+      setPreference(TAB_PREFERENCE_KEY, v)
+    },
+    [setPreference]
+  )
   const searchParams = useSearchParams()
-  const [activeTab, setActiveTab] = React.useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(TAB_STORAGE_KEY)
-      if (saved === "available" || saved === "reorder") return saved
-    }
-    return "available"
-  })
 
   // При переходе по ссылке с ?tab=reorder — открывать вкладку «Точка заказа»
   React.useEffect(() => {
     const tab = searchParams.get("tab")
     if (tab === "reorder") setActiveTab("reorder")
-  }, [searchParams])
+  }, [searchParams, setActiveTab])
   const [reorderPoints, setReorderPoints] = React.useState<ReorderPoint[]>([])
   const [reorderLoading, setReorderLoading] = React.useState(false)
   const [reorderError, setReorderError] = React.useState<string | null>(null)
@@ -376,14 +393,6 @@ export function WarehouseBalanceView() {
   const [itemToDelete, setItemToDelete] = React.useState<{ id: string; name: string } | null>(null)
   const [detailsPoint, setDetailsPoint] = React.useState<ReorderPoint | null>(null)
   const [editingPoint, setEditingPoint] = React.useState<ReorderPoint | null>(null)
-  const [pageSizeSelectValue, setPageSizeSelectValue] = React.useState<string>(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem(STORAGE_KEY)
-      const n = saved ? Number(saved) : 17
-      return (PAGE_SIZE_PRESETS as readonly number[]).includes(n) ? String(n) : "custom"
-    }
-    return "17"
-  })
   /** Дерево номенклатуры — берём из balancesTree (один источник) */
   const materialsTree = balancesTree
   const [materialsLoading, setMaterialsLoading] = React.useState(false)
@@ -602,13 +611,6 @@ export function WarehouseBalanceView() {
     }
   }, [activeTab, fetchAllPrefs])
 
-  const setPageSizeAndSave = React.useCallback((n: number) => {
-    const clamped = Math.max(1, Math.min(500, n))
-    setPageSize(clamped)
-    setPage(1)
-    setPageSizeSelectValue((PAGE_SIZE_PRESETS as readonly number[]).includes(clamped) ? String(clamped) : "custom")
-    localStorage.setItem(STORAGE_KEY, String(clamped))
-  }, [])
 
   const fetchReorderPoints = React.useCallback(async () => {
     setReorderLoading(true)
@@ -944,10 +946,7 @@ export function WarehouseBalanceView() {
         <Tabs
           value={activeTab}
           onValueChange={(v) => {
-            if (v === "available" || v === "reorder") {
-              setActiveTab(v)
-              localStorage.setItem(TAB_STORAGE_KEY, v)
-            }
+            if (v === "available" || v === "reorder") setActiveTab(v)
           }}
           className="w-full"
         >
