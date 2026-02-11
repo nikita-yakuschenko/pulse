@@ -268,6 +268,13 @@ export default function MrpReportDetailsPage() {
     return { groupKeys, byGroup }
   }, [report?.results])
 
+  // По умолчанию все номенклатурные группы свёрнуты; при смене результатов отчёта — снова свёрнуты
+  useEffect(() => {
+    if (groupKeys.length > 0) {
+      setCollapsedGroups(new Set(groupKeys))
+    }
+  }, [groupKeys])
+
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6 px-4 lg:px-6">
       <div className="flex items-center justify-between gap-3">
