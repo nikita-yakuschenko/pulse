@@ -17,8 +17,16 @@ export async function GET() {
     .eq("user_id", user.id)
     .single()
 
+  // PGRST116 = no rows (нормально для нового пользователя)
   if (error && error.code !== "PGRST116") {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    const msg = error.message || ""
+    const hint = msg.includes("does not exist") || msg.includes("relation")
+      ? " Выполните миграцию: prisma/supabase-user-preferences.sql в SQL Editor Supabase."
+      : ""
+    return NextResponse.json(
+      { error: msg + hint },
+      { status: msg.includes("does not exist") ? 503 : 500 }
+    )
   }
 
   const preferences: UserPreferences = (data?.preferences as UserPreferences) ?? {}
@@ -57,7 +65,14 @@ export async function PATCH(request: Request) {
     )
 
   if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+    const msg = error.message || ""
+    const hint = msg.includes("does not exist") || msg.includes("relation")
+      ? " Выполните миграцию: prisma/supabase-user-preferences.sql в SQL Editor Supabase."
+      : ""
+    return NextResponse.json(
+      { error: msg + hint },
+      { status: msg.includes("does not exist") ? 503 : 500 }
+    )
   }
 
   return NextResponse.json(merged)
