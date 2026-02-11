@@ -581,15 +581,6 @@ export function SupplierOrdersTable() {
     loadOrders({ code: "", contractor: "", year: "", full: false })
   }, [loadOrders])
 
-  if (loading) {
-    return (
-      <div className="flex items-center justify-center py-12">
-        <IconLoader className="h-6 w-6 animate-spin text-muted-foreground" />
-        <span className="ml-2 text-sm text-muted-foreground">Загрузка заказов...</span>
-      </div>
-    )
-  }
-
   return (
     <div className="flex flex-col gap-3">
       {/* Filters - inline row */}
@@ -787,7 +778,16 @@ export function SupplierOrdersTable() {
         />
       </div> */}
 
-      {/* Table */}
+      {/* Table: при загрузке — спиннер, иначе таблица и пагинация */}
+      {loading ? (
+        <div className="overflow-hidden rounded-lg border">
+          <div className="flex items-center justify-center py-12">
+            <IconLoader className="h-6 w-6 animate-spin text-muted-foreground" />
+            <span className="ml-2 text-sm text-muted-foreground">Загрузка заказов...</span>
+          </div>
+        </div>
+      ) : (
+        <>
       <div className="overflow-hidden rounded-lg border">
         <Table className="[&_tbody_td]:h-10 [&_tbody_td]:py-1">
           <TableHeader className="bg-muted">
@@ -918,6 +918,8 @@ export function SupplierOrdersTable() {
           </Button>
         </div>
       </div>
+        </>
+      )}
 
       {/* Sheet — детали заказа или полноэкранный просмотр вложения */}
       <Sheet open={sheetOpen} onOpenChange={(open) => { 
