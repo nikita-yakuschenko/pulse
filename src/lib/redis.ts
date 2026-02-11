@@ -14,9 +14,10 @@ function getRedis(): Redis | null {
   try {
     redis = new Redis(url, { maxRetriesPerRequest: 2 })
     redis.on("error", (err) => {
-      if (process.env.NODE_ENV === "development") {
-        console.warn("[redis]", err.message)
-      }
+      console.warn("[redis] error:", err.message)
+    })
+    redis.on("connect", () => {
+      console.log("[redis] connected")
     })
     return redis
   } catch {
@@ -43,6 +44,8 @@ export function buildCacheKey(
 
 const DEFAULT_TTL_SEC = 300 // 5 минут
 
+const LOG_PREFIX = "[redis]"
+
 /** Прочитать из кеша (JSON). Возвращает null, если нет или Redis недоступен. */
 export async function cacheGet<T = unknown>(key: string): Promise<T | null> {
   const client = getRedis()
@@ -50,6 +53,7 @@ export async function cacheGet<T = unknown>(key: string): Promise<T | null> {
   try {
     const raw = await client.get(key)
     if (raw == null) return null
+    console.log(`${LOG_PREFIX} hit ${key}`)
     return JSON.parse(raw) as T
   } catch {
     return null
@@ -67,7 +71,9 @@ export async function cacheSet(
   try {
     const serialized = JSON.stringify(value)
     await client.setex(key, ttlSeconds, serialized)
+    console.log(`${LOG_PREFIX} set ${key} ttl=${ttlSeconds}s`)
   } catch {
     // игнорируем ошибки записи
   }
 }
+
