@@ -3,15 +3,16 @@
 import * as React from "react"
 import { useSearchParams } from "next/navigation"
 import {
+  IconAdjustments,
   IconAlertTriangle,
   IconBookmark,
   IconBox,
   IconBuildingWarehouse,
   IconCaretDownFilled,
   IconCaretUpFilled,
-  IconChevronLeft,
   IconChevronRight,
   IconCopy,
+  IconDownload,
   IconEdit,
   IconEye,
   IconEyeOff,
@@ -21,17 +22,21 @@ import {
   IconList,
   IconMathAvg,
   IconPlus,
+  IconQrcode,
   IconSearch,
   IconStar,
   IconTrash,
   IconX,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
+import QRCode from "qrcode"
+import jsPDF from "jspdf"
 import type { WarehouseBalance, MaterialTreeNode } from "@/types/1c"
 import { cn, formatMaterialQty, formatUnit } from "@/lib/utils"
 import {
   Card,
   CardAction,
+  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
@@ -57,6 +62,18 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import {
+  Popover,
+  PopoverContent,
+  PopoverTrigger,
+} from "@/components/ui/popover"
+import {
   AlertDialog,
   AlertDialogAction,
   AlertDialogCancel,
@@ -77,6 +94,7 @@ import {
   BreadcrumbSeparator,
 } from "@/components/ui/breadcrumb"
 import { Checkbox } from "@/components/ui/checkbox"
+import { Separator } from "@/components/ui/separator"
 import {
   Empty,
   EmptyContent,
@@ -89,7 +107,7 @@ import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preferen
 import { useUserPreferences } from "@/contexts/user-preferences-context"
 
 const PAGE_SIZE_PRESETS = [17, 20, 50, 100, 200] as const
-const TAB_PREFERENCE_KEY = "warehouse-balance-tab"
+const TAB_PREFERENCE_KEY = "warehouse-inventory-tab"
 
 /** Совпадение по полному или частичному наименованию (без учёта регистра) */
 function nodeMatchesSearch(node: MaterialTreeNode, query: string): boolean {
@@ -98,14 +116,22 @@ function nodeMatchesSearch(node: MaterialTreeNode, query: string): boolean {
   return name.includes(query.trim().toLowerCase())
 }
 
-/** Собрать из дерева только материалы (не группы), у которых наименование совпадает с запросом. Сквозной поиск. */
-function collectMatchingMaterials(nodes: MaterialTreeNode[] | null | undefined, query: string): MaterialTreeNode[] {
+/** Собрать из дерева только материалы (не группы), у которых наименование или код совпадает с запросом. Сквозной поиск.
+ *  excludedGroupCodes — коды групп верхнего уровня, которые исключены из поиска (их поддеревья пропускаются).
+ */
+function collectMatchingMaterials(
+  nodes: MaterialTreeNode[] | null | undefined,
+  query: string,
+  excludedGroupCodes?: Set<string>,
+): MaterialTreeNode[] {
   if (!nodes?.length || !query.trim()) return []
   const q = query.trim().toLowerCase()
   const result: MaterialTreeNode[] = []
   for (const node of nodes) {
     if (node.ЭтоГруппа) {
-      result.push(...collectMatchingMaterials(node.Дети, query))
+      // Исключаем группы верхнего уровня, если они в списке исключений
+      if (excludedGroupCodes?.has(node.Код ?? "")) continue
+      result.push(...collectMatchingMaterials(node.Дети, query, excludedGroupCodes))
     } else if (
       (node.Наименование ?? "").toLowerCase().includes(q) ||
       (node.Код ?? "").toLowerCase().includes(q)
@@ -115,9 +141,6 @@ function collectMatchingMaterials(nodes: MaterialTreeNode[] | null | undefined, 
   }
   return result
 }
-
-/** Код номенклатурной группы «Материалы» — в точке заказа отображаем только её и её поддерево */
-const MATERIALS_GROUP_CODE = "00000007716"
 
 /** Найти узел в дереве по коду */
 function findNodeByCode(nodes: MaterialTreeNode[] | null | undefined, code: string): MaterialTreeNode | undefined {
@@ -334,7 +357,10 @@ const GroupTreeNode = React.memo(function GroupTreeNode({
   )
 })
 
-export function WarehouseBalanceView() {
+/** Код номенклатурной группы «Материалы» — в точке заказа отображаем только её и её поддерево */
+const MATERIALS_GROUP_CODE = "00000007716"
+
+export function WarehouseInventoryView() {
   /** Дерево с остатками (ответ balances/get/list) — иерархия + Остатки по складам на листьях */
   const [balancesTree, setBalancesTree] = React.useState<MaterialTreeNode[] | null>(null)
   const [loading, setLoading] = React.useState(true)
@@ -345,7 +371,7 @@ export function WarehouseBalanceView() {
     pageSizeSelectValue,
     setPageSizeAndSave: setPageSizeAndSaveBase,
     setPageSizeSelectValue,
-  } = useTablePageSizePreference("warehouse-balance-page-size")
+  } = useTablePageSizePreference("warehouse-inventory-page-size")
   const setPageSizeAndSave = React.useCallback(
     (n: number) => {
       setPageSizeAndSaveBase(n)
@@ -354,18 +380,18 @@ export function WarehouseBalanceView() {
     [setPageSizeAndSaveBase]
   )
   const { preferences, setPreference, isLoaded: prefsLoadedTab } = useUserPreferences()
-  const [activeTab, setActiveTabState] = React.useState<"available" | "reorder">("available")
+  const [activeTab, setActiveTabState] = React.useState<"inventory" | "reorder">("inventory")
   const activeTabSynced = React.useRef(false)
   React.useEffect(() => {
     if (!prefsLoadedTab || activeTabSynced.current) return
     const saved = preferences[TAB_PREFERENCE_KEY]
-    if (saved === "available" || saved === "reorder") {
+    if (saved === "inventory" || saved === "reorder") {
       setActiveTabState(saved)
       activeTabSynced.current = true
     }
-  }, [prefsLoadedTab, preferences[TAB_PREFERENCE_KEY]])
+  }, [prefsLoadedTab, preferences])
   const setActiveTab = React.useCallback(
-    (v: "available" | "reorder") => {
+    (v: "inventory" | "reorder") => {
       setActiveTabState(v)
       setPreference(TAB_PREFERENCE_KEY, v)
     },
@@ -384,7 +410,7 @@ export function WarehouseBalanceView() {
     const searchQuery = searchParams.get("search")
     if (searchQuery && searchQuery.trim()) {
       setMaterialSearchQuery(searchQuery.trim())
-      setActiveTab("available")
+      setActiveTab("inventory")
     }
   }, [searchParams, setActiveTab])
   const [reorderPoints, setReorderPoints] = React.useState<ReorderPoint[]>([])
@@ -422,10 +448,192 @@ export function WarehouseBalanceView() {
   /** Избранные материалы (по пользователю из API) — отображаются вверху списка при провале в группу */
   const [materialPrefs, setMaterialPrefs] = React.useState<Record<string, { favorite: boolean }>>({})
   const [materialPrefsLoading, setMaterialPrefsLoading] = React.useState(false)
+  /** Коды групп верхнего уровня, исключённых из поиска (из API, привязка к пользователю) */
+  const [excludedGroups, setExcludedGroups] = React.useState<Set<string>>(new Set())
+  /** Выбранный материал для отображения в Sheet */
+  const [selectedMaterial, setSelectedMaterial] = React.useState<MaterialTreeNode | null>(null)
+  /** QR-код для текущего материала */
+  const [qrCodeDataUrl, setQrCodeDataUrl] = React.useState<string>("")
+  const [qrCodeOpen, setQrCodeOpen] = React.useState(false)
+
+  /** Группы верхнего уровня дерева (для настроек поиска) */
+  const topLevelGroups = React.useMemo(
+    () => (materialsTree ?? []).filter((n) => n.ЭтоГруппа).sort((a, b) => (a.Наименование ?? "").localeCompare(b.Наименование ?? "", "ru")),
+    [materialsTree]
+  )
+
+  /** Сохранить исключения поиска через API (PUT — полная замена) */
+  const saveExcludedGroups = React.useCallback(async (codes: Set<string>) => {
+    try {
+      await fetch("/api/warehouse/search-exclusions", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ section: "balance", groupCodes: [...codes] }),
+      })
+    } catch {
+      // при ошибке сохранения — тихо, данные уже обновлены в state
+    }
+  }, [])
+
+  const toggleExcludedGroup = React.useCallback((code: string) => {
+    setExcludedGroups((prev) => {
+      const next = new Set(prev)
+      if (next.has(code)) next.delete(code)
+      else next.add(code)
+      saveExcludedGroups(next)
+      return next
+    })
+  }, [saveExcludedGroups])
+
+  /** Генерация QR-кода для запроса остатков материала */
+  const generateQRCode = React.useCallback(async (materialCode: string) => {
+    try {
+      const url = `${window.location.origin}/m/${encodeURIComponent(materialCode)}`
+      const dataUrl = await QRCode.toDataURL(url, {
+        width: 300,
+        margin: 2,
+        color: {
+          dark: "#000000",
+          light: "#ffffff",
+        },
+      })
+      setQrCodeDataUrl(dataUrl)
+      setQrCodeOpen(true)
+    } catch (error) {
+      toast.error("Не удалось сгенерировать QR-код")
+      console.error(error)
+    }
+  }, [])
+
+  /** Генерация PDF стеллажной бирки */
+  const generateShelfLabel = React.useCallback(async () => {
+    if (!selectedMaterial) return
+
+    try {
+      // Генерируем QR-код
+      const url = `${window.location.origin}/m/${encodeURIComponent(selectedMaterial.Код)}`
+      const qrDataUrl = await QRCode.toDataURL(url, {
+        width: 600,
+        margin: 2,
+        color: {
+          dark: "#000000",
+          light: "#ffffff",
+        },
+      })
+
+      // Создаём canvas для рисования бирки (100x60мм при 96 DPI ≈ 378x227px)
+      const canvas = document.createElement("canvas")
+      const dpi = 300 // Высокое качество для печати
+      const mmToPx = dpi / 25.4
+      const width = 100 * mmToPx // 100мм
+      const height = 60 * mmToPx // 60мм
+      
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext("2d")
+      
+      if (!ctx) throw new Error("Canvas context not available")
+
+      // Белый фон
+      ctx.fillStyle = "#ffffff"
+      ctx.fillRect(0, 0, width, height)
+
+      // Рамка
+      ctx.strokeStyle = "#000000"
+      ctx.lineWidth = 2
+      ctx.strokeRect(10, 10, width - 20, height - 20)
+
+      // Загружаем QR-код
+      const qrImg = new Image()
+      await new Promise((resolve, reject) => {
+        qrImg.onload = resolve
+        qrImg.onerror = reject
+        qrImg.src = qrDataUrl
+      })
+
+      // Рисуем QR-код (левая часть, 50x50мм)
+      const qrSize = 50 * mmToPx
+      const qrPadding = 20
+      ctx.drawImage(qrImg, qrPadding, (height - qrSize) / 2, qrSize, qrSize)
+
+      // Правая часть - текст
+      const textX = qrPadding + qrSize + 40
+      let textY = 70
+
+      // КОД
+      ctx.fillStyle = "#000000"
+      ctx.font = `bold ${24}px Arial, sans-serif`
+      ctx.fillText("КОД:", textX, textY)
+      
+      textY += 38
+      ctx.font = `${28}px "Courier New", monospace`
+      ctx.fillText(selectedMaterial.Код, textX, textY)
+
+      // МАТЕРИАЛ
+      textY += 50
+      ctx.font = `bold ${22}px Arial, sans-serif`
+      ctx.fillText("МАТЕРИАЛ:", textX, textY)
+
+      // Название материала с переносом строк
+      textY += 42
+      ctx.font = `bold ${28}px Arial, sans-serif`
+      const maxWidth = width - textX - 40
+      const words = selectedMaterial.Наименование.split(" ")
+      let line = ""
+      const lineHeight = 34
+
+      for (const word of words) {
+        const testLine = line + (line ? " " : "") + word
+        const metrics = ctx.measureText(testLine)
+        
+        if (metrics.width > maxWidth && line) {
+          ctx.fillText(line, textX, textY)
+          line = word
+          textY += lineHeight
+        } else {
+          line = testLine
+        }
+      }
+      if (line) {
+        ctx.fillText(line, textX, textY)
+      }
+
+      // Конвертируем canvas в PDF
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: [100, 60],
+      })
+
+      const imgData = canvas.toDataURL("image/png")
+      pdf.addImage(imgData, "PNG", 0, 0, 100, 60)
+      
+      // Сохраняем PDF
+      pdf.save(`Бирка_${selectedMaterial.Код}.pdf`)
+      toast.success("Стеллажная бирка сгенерирована")
+      setQrCodeOpen(false)
+    } catch (error) {
+      toast.error("Не удалось сгенерировать бирку")
+      console.error(error)
+    }
+  }, [selectedMaterial])
+
+  /** Очистка QR-кода при закрытии Sheet */
+  React.useEffect(() => {
+    if (!selectedMaterial) {
+      setQrCodeDataUrl("")
+      setQrCodeOpen(false)
+    }
+  }, [selectedMaterial])
 
   // Дебаунс: фильтрация запускается не раньше чем через 500 мс после последнего символа
+  // Минимум 3 символа для начала поиска
   React.useEffect(() => {
     if (materialSearchQuery === "") {
+      setDebouncedSearchQuery("")
+      return
+    }
+    if (materialSearchQuery.length < 3) {
       setDebouncedSearchQuery("")
       return
     }
@@ -475,7 +683,7 @@ export function WarehouseBalanceView() {
     if (!debouncedSearchQuery.trim()) return null
     const q = debouncedSearchQuery.trim().toLowerCase()
     const isNumeric = /^\d+$/.test(q)
-    const flat = collectMatchingMaterials(materialsTree ?? [], debouncedSearchQuery)
+    const flat = collectMatchingMaterials(materialsTree ?? [], debouncedSearchQuery, excludedGroups.size > 0 ? excludedGroups : undefined)
     return [...flat].sort((a, b) => {
       const qtyA = balances.filter((r) => r.Код === a.Код).reduce((s, r) => s + r.Количество, 0)
       const qtyB = balances.filter((r) => r.Код === b.Код).reduce((s, r) => s + r.Количество, 0)
@@ -493,7 +701,7 @@ export function WarehouseBalanceView() {
       }
       return (a.Наименование ?? "").localeCompare(b.Наименование ?? "", "ru")
     })
-  }, [materialsTree, debouncedSearchQuery, balances, materialPrefs])
+  }, [materialsTree, debouncedSearchQuery, balances, materialPrefs, excludedGroups])
 
   // Фильтр по скрытым группам (в обычном режиме; при поиске не используется)
   const levelAfterHidden = React.useMemo(() => {
@@ -551,7 +759,7 @@ export function WarehouseBalanceView() {
     else setDrillPath((prev) => prev.slice(0, index + 1))
   }, [])
 
-  /** Загрузить все настройки одним запросом (group prefs + material prefs) */
+  /** Загрузить все настройки одним запросом (group prefs + material prefs + search exclusions) */
   const fetchAllPrefs = React.useCallback(async () => {
     setGroupPrefsLoading(true)
     setMaterialPrefsLoading(true)
@@ -561,9 +769,11 @@ export function WarehouseBalanceView() {
       if (!res.ok) throw new Error(json.error || "Ошибка загрузки")
       setGroupPrefs(json.groupPrefs ?? {})
       setMaterialPrefs(json.materialPrefs ?? {})
+      setExcludedGroups(new Set(json.searchExclusions ?? []))
     } catch {
       setGroupPrefs({})
       setMaterialPrefs({})
+      setExcludedGroups(new Set())
     } finally {
       setGroupPrefsLoading(false)
       setMaterialPrefsLoading(false)
@@ -615,7 +825,7 @@ export function WarehouseBalanceView() {
   )
 
   React.useEffect(() => {
-    if (activeTab === "available") {
+    if (activeTab === "inventory") {
       fetchAllPrefs()
     }
   }, [activeTab, fetchAllPrefs])
@@ -804,7 +1014,7 @@ export function WarehouseBalanceView() {
     fetchWarehouses()
   }, [fetchWarehouses])
 
-  // Загрузка данных для табов «Доступный остаток» и «Точка заказа» — базовый запрос balances/get/list (полная иерархия + остатки по складам)
+  // Загрузка данных для табов «Номенклатура и остатки» и «Точка заказа» — базовый запрос balances/get/list (полная иерархия + остатки по складам)
   React.useEffect(() => {
     setMaterialsLoading(true)
     setMaterialsError(null)
@@ -827,13 +1037,13 @@ export function WarehouseBalanceView() {
       })
   }, [])
 
-  // Загружаем точки заказа при монтировании (нужны и в табе «Доступный остаток» для кнопки-закладки)
+  // Загружаем точки заказа при монтировании (нужны и в табе «Номенклатура и остатки» для кнопки-закладки)
   React.useEffect(() => {
       fetchReorderPoints()
   }, [fetchReorderPoints])
 
   if (loading) {
-    return <WarehouseBalanceSkeleton />
+    return <WarehouseInventorySkeleton />
   }
 
   if (error) {
@@ -844,147 +1054,101 @@ export function WarehouseBalanceView() {
     )
   }
 
-  const totalQty = balances.reduce((s, r) => s + r.Количество, 0)
-  const uniqueItems = new Set(balances.map((r) => r.Код)).size
-  const warehouseCount = new Set(balances.map((r) => r.Склад).filter(Boolean)).size
-  const avgPerItem = uniqueItems > 0 ? Math.round(totalQty / uniqueItems) : 0
-  
-  // Подсчёт позиций с наступившей точкой заказа (для групповых — сумма по всем кодам; учитываем склады точки)
-  const reachedReorderPoints = reorderPoints.filter((point) => {
-    const ptBalances = filterBalancesByWarehouses(balances, point.warehouseCodes, warehouses)
-    const codes = point.isGroup && Array.isArray(point.itemCodes)
-      ? point.itemCodes
-      : [point.itemCode]
-    const totalQty = codes.reduce((s, c) => {
-      const rows = ptBalances.filter((r) => r.Код === c)
-      return s + rows.reduce((sum, r) => sum + (r.Количество ?? 0), 0)
-    }, 0)
-    return totalQty <= Number(point.reorderQuantity)
-  }).length
-
   return (
-    <div className="flex flex-col gap-4 md:gap-6">
-      {/* Сводные карточки по остаткам */}
-      <div className="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
-        <Card className="@container/card">
-          <CardHeader>
-            <CardDescription>Всего единиц</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {formatMaterialQty(totalQty)}
-            </CardTitle>
-            <CardAction>
-              <IconBox className="size-4 text-muted-foreground" />
-            </CardAction>
-          </CardHeader>
-          <CardFooter className="flex-col items-start gap-1.5 text-sm">
-            <div className="line-clamp-1 flex gap-2 font-medium">
-              Суммарный остаток по всем позициям
-            </div>
-            <div className="text-muted-foreground">
-              Единицы на складах
-            </div>
-          </CardFooter>
-        </Card>
-        <Card className="@container/card">
-          <CardHeader>
-            <CardDescription>Позиций номенклатуры</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {formatMaterialQty(uniqueItems)}
-            </CardTitle>
-            <CardAction>
-              <IconList className="size-4 text-muted-foreground" />
-            </CardAction>
-          </CardHeader>
-          <CardFooter className="flex-col items-start gap-1.5 text-sm">
-            <div className="line-clamp-1 flex gap-2 font-medium">
-              Уникальных наименований
-            </div>
-            <div className="text-muted-foreground">
-              В учёте остатков
-            </div>
-          </CardFooter>
-        </Card>
-        <Card 
-          className="@container/card cursor-pointer transition-all hover:shadow-md hover:scale-[1.02]" 
-          onClick={() => setActiveTab("reorder")}
-          role="button"
-          tabIndex={0}
-          onKeyDown={(e) => e.key === "Enter" && setActiveTab("reorder")}
-        >
-          <CardHeader>
-            <CardDescription>Точки заказа</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {formatMaterialQty(reachedReorderPoints)}
-            </CardTitle>
-            <CardAction>
-              <IconAlertTriangle className="size-4 text-muted-foreground" />
-            </CardAction>
-          </CardHeader>
-          <CardFooter className="flex-col items-start gap-1.5 text-sm">
-            <div className="line-clamp-1 flex gap-2 font-medium">
-              {reachedReorderPoints === 1 ? "Позиция" : reachedReorderPoints > 1 && reachedReorderPoints < 5 ? "Позиции" : "Позиций"} с наступившей точкой
-            </div>
-            <div className="text-muted-foreground">
-              Остаток равен или менее точки заказа
-            </div>
-          </CardFooter>
-        </Card>
-        <Card className="@container/card">
-          <CardHeader>
-            <CardDescription>Средний остаток на позицию</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {formatMaterialQty(avgPerItem)}
-            </CardTitle>
-            <CardAction>
-              <IconMathAvg className="size-4 text-muted-foreground" />
-            </CardAction>
-          </CardHeader>
-          <CardFooter className="flex-col items-start gap-1.5 text-sm">
-            <div className="line-clamp-1 flex gap-2 font-medium">
-              Ед. в среднем на наименование
-            </div>
-            <div className="text-muted-foreground">
-              Всего ÷ позиций
-            </div>
-          </CardFooter>
-        </Card>
-      </div>
-
-      {/* Табы + таблица */}
-      <div className="px-4 lg:px-6">
+    <div className="px-4 lg:px-6">
         <Tabs
           value={activeTab}
           onValueChange={(v) => {
-            if (v === "available" || v === "reorder") setActiveTab(v)
+            if (v === "inventory" || v === "reorder") setActiveTab(v)
           }}
           className="w-full"
         >
           <div className="mb-4 flex items-center justify-between gap-4 flex-wrap">
             <TabsList>
-              <TabsTrigger value="available">Доступный остаток</TabsTrigger>
-              <TabsTrigger value="reorder">Точка заказа</TabsTrigger>
+              <TabsTrigger value="inventory">Номенклатура и остатки</TabsTrigger>
+              <TabsTrigger value="reorder">Точки заказа</TabsTrigger>
             </TabsList>
-            {activeTab === "available" && (
-              <div className="relative flex-1 min-w-[200px] max-w-full">
-                <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
-                <Input
-                  type="search"
-                  placeholder="Поиск по наименованию..."
-                  value={materialSearchQuery}
-                  onChange={(e) => setMaterialSearchQuery(e.target.value)}
-                  className="pl-8 pr-8"
-                  aria-label="Сквозной поиск по наименованию"
-                />
-                {materialSearchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setMaterialSearchQuery("")}
-                    className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground"
-                    aria-label="Сбросить поиск"
-                  >
-                    <IconX className="h-4 w-4" />
-                  </button>
-                )}
+            {activeTab === "inventory" && (
+              <div className="flex items-center gap-2 flex-1 min-w-[200px]">
+                <div className="relative flex-1">
+                  <IconSearch className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground pointer-events-none" />
+                  <Input
+                    type="text"
+                    placeholder="Поиск по наименованию (мин. 3 символа)..."
+                    value={materialSearchQuery}
+                    onChange={(e) => setMaterialSearchQuery(e.target.value)}
+                    className="pl-8 pr-8"
+                    aria-label="Сквозной поиск по наименованию"
+                  />
+                  {materialSearchQuery && (
+                    <button
+                      type="button"
+                      onClick={() => setMaterialSearchQuery("")}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded hover:bg-muted text-muted-foreground hover:text-foreground transition-colors"
+                      aria-label="Сбросить поиск"
+                    >
+                      <IconX className="h-4 w-4" />
+                    </button>
+                  )}
+                </div>
+                <Popover>
+                  <PopoverTrigger asChild>
+                    <Button variant="outline" className="shrink-0 h-9 gap-1.5 relative">
+                      <IconAdjustments className="h-4 w-4" />
+                      Настройки поиска
+                      {excludedGroups.size > 0 && (
+                        <span className="absolute -top-1.5 -right-1.5 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-1 text-[10px] font-medium text-primary-foreground">
+                          {excludedGroups.size}
+                        </span>
+                      )}
+                    </Button>
+                  </PopoverTrigger>
+                  <PopoverContent align="end" className="w-80 p-0">
+                    <div className="border-b px-3 py-2.5">
+                      <p className="text-sm font-medium">Исключить из поиска</p>
+                      <p className="text-xs text-muted-foreground mt-0.5">Отмеченные группы не будут участвовать в поиске</p>
+                    </div>
+                    <div className="max-h-64 overflow-y-auto py-1">
+                      {topLevelGroups.length === 0 ? (
+                        <p className="text-sm text-muted-foreground px-3 py-2">Группы загружаются...</p>
+                      ) : (
+                        topLevelGroups.map((group) => {
+                          const code = group.Код ?? ""
+                          const excluded = excludedGroups.has(code)
+                          return (
+                            <label
+                              key={code}
+                              className="flex items-center gap-2.5 px-3 py-1.5 cursor-pointer text-sm hover:bg-muted/50 transition-colors select-none"
+                            >
+                              <Checkbox
+                                checked={excluded}
+                                onCheckedChange={() => toggleExcludedGroup(code)}
+                                aria-label={`Исключить «${group.Наименование}» из поиска`}
+                              />
+                              <IconFolder className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />
+                              <span className="truncate">{group.Наименование}</span>
+                            </label>
+                          )
+                        })
+                      )}
+                    </div>
+                    {excludedGroups.size > 0 && (
+                      <div className="border-t px-3 py-2">
+                        <button
+                          type="button"
+                          className="text-xs text-muted-foreground hover:text-foreground transition-colors"
+                          onClick={() => {
+                            const empty = new Set<string>()
+                            setExcludedGroups(empty)
+                            saveExcludedGroups(empty)
+                          }}
+                        >
+                          Сбросить все исключения
+                        </button>
+                      </div>
+                    )}
+                  </PopoverContent>
+                </Popover>
               </div>
             )}
               {activeTab === "reorder" && (
@@ -994,12 +1158,12 @@ export function WarehouseBalanceView() {
                 </Button>
               )}
           </div>
-          <TabsContent value="available" className="mt-0">
+          <TabsContent value="inventory" className="mt-0">
             <div className="space-y-4">
               <div className="rounded-lg border overflow-hidden">
                 {!materialsLoading && !materialsError && displayLevel.length === 0 ? (
                   <>
-<div className="bg-muted/50 border-b flex items-center h-10 px-2">
+                    <div className="bg-muted/50 border-b flex items-center h-10 px-2">
                       <div className="flex flex-wrap items-center justify-between gap-3 min-h-10 h-10 px-2 w-full">
                         <Breadcrumb className="min-w-0 flex-1 shrink">
                           <BreadcrumbList className="flex-nowrap overflow-hidden">
@@ -1076,9 +1240,9 @@ export function WarehouseBalanceView() {
                           </BreadcrumbList>
                         </Breadcrumb>
                         <div className="flex items-center gap-6 mr-6">
-                            <label className="flex items-center gap-2 cursor-pointer text-sm text-muted-foreground hover:text-foreground select-none">
-                              <Checkbox
-                                checked={showHiddenGroups}
+                          <label className="flex items-center gap-2 cursor-pointer text-sm text-muted-foreground hover:text-foreground select-none">
+                            <Checkbox
+                              checked={showHiddenGroups}
                               onCheckedChange={(v) => setShowHiddenGroups(v === true)}
                               aria-label="Отображать скрытые группы"
                             />
@@ -1110,154 +1274,261 @@ export function WarehouseBalanceView() {
                     </div>
                   </>
                 ) : (
-                <Table className="table-fixed">
-                  <colgroup>
-                    <col style={{ width: 150 }} />
-                    <col />
-                    <col style={{ width: 200 }} />
-                    <col style={{ width: 120 }} />
-                    <col style={{ width: 80 }} />
-                  </colgroup>
-                  <TableHeader className="bg-muted/50">
-                    <TableRow>
-                      <TableCell colSpan={4} className="py-0 h-10 align-middle">
-                        <div className="flex flex-wrap items-center justify-between gap-3 min-h-10 h-10 px-2">
-                          <Breadcrumb className="min-w-0 flex-1 shrink">
-                            <BreadcrumbList className="flex-nowrap overflow-hidden">
-                              {searchResults !== null ? (
-                                <>
+                  <Table className="table-fixed">
+                    <colgroup>
+                      <col style={{ width: 150 }} />
+                      <col />
+                      <col style={{ width: 200 }} />
+                      <col style={{ width: 120 }} />
+                      <col style={{ width: 80 }} />
+                    </colgroup>
+                    <TableHeader className="bg-muted/50">
+                      <TableRow>
+                        <TableCell colSpan={5} className="py-0 h-10 align-middle">
+                          <div className="flex flex-wrap items-center justify-between gap-3 min-h-10 h-10 px-2">
+                            <Breadcrumb className="min-w-0 flex-1 shrink">
+                              <BreadcrumbList className="flex-nowrap overflow-hidden">
+                                {searchResults !== null ? (
+                                  <>
+                                    <BreadcrumbItem className="shrink-0">
+                                      <BreadcrumbLink asChild>
+                                        <button
+                                          type="button"
+                                          onClick={goHome}
+                                          className="inline-flex items-center gap-1 rounded p-1 -ml-1 hover:text-foreground hover:bg-muted/80 transition-colors"
+                                          aria-label="Домой"
+                                        >
+                                          <IconHome className="h-4 w-4 shrink-0" />
+                                        </button>
+                                      </BreadcrumbLink>
+                                    </BreadcrumbItem>
+                                    <BreadcrumbSeparator className="shrink-0" />
+                                    <BreadcrumbItem className="shrink-0 min-w-0">
+                                      <BreadcrumbPage className="truncate inline-flex items-center gap-1">
+                                        Результаты поиска
+                                        {isSearchPending && (
+                                          <IconLoader className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden />
+                                        )}
+                                      </BreadcrumbPage>
+                                    </BreadcrumbItem>
+                                  </>
+                                ) : drillPath.length > 0 ? (
+                                  <>
+                                    <BreadcrumbItem className="shrink-0">
+                                      <BreadcrumbLink asChild>
+                                        <button
+                                          type="button"
+                                          onClick={() => drillTo(-1)}
+                                          className="inline-flex items-center gap-1 rounded p-1 -ml-1 hover:text-foreground hover:bg-muted/80 transition-colors"
+                                          aria-label="В корень"
+                                        >
+                                          <IconHome className="h-4 w-4 shrink-0" />
+                                        </button>
+                                      </BreadcrumbLink>
+                                    </BreadcrumbItem>
+                                    {drillPath.map((node, idx) => (
+                                      <React.Fragment key={node.Код ?? idx}>
+                                        <BreadcrumbSeparator className="shrink-0" />
+                                        <BreadcrumbItem className="shrink-0 min-w-0 max-w-[180px]">
+                                          {idx === drillPath.length - 1 ? (
+                                            <BreadcrumbPage className="truncate block" title={node.Наименование ?? undefined}>
+                                              {node.Наименование}
+                                            </BreadcrumbPage>
+                                          ) : (
+                                            <BreadcrumbLink asChild>
+                                              <button
+                                                type="button"
+                                                onClick={() => drillTo(idx)}
+                                                className="truncate block text-left w-full hover:text-foreground"
+                                                title={node.Наименование ?? undefined}
+                                              >
+                                                {node.Наименование}
+                                              </button>
+                                            </BreadcrumbLink>
+                                          )}
+                                        </BreadcrumbItem>
+                                      </React.Fragment>
+                                    ))}
+                                  </>
+                                ) : (
                                   <BreadcrumbItem className="shrink-0">
-                                    <BreadcrumbLink asChild>
-                                      <button
-                                        type="button"
-                                        onClick={goHome}
-                                        className="inline-flex items-center gap-1 rounded p-1 -ml-1 hover:text-foreground hover:bg-muted/80 transition-colors"
-                                        aria-label="Домой"
-                                      >
-                                        <IconHome className="h-4 w-4 shrink-0" />
-                                      </button>
-                                    </BreadcrumbLink>
-                                  </BreadcrumbItem>
-                                  <BreadcrumbSeparator className="shrink-0" />
-                                  <BreadcrumbItem className="shrink-0 min-w-0">
-                                    <BreadcrumbPage className="truncate inline-flex items-center gap-1">
-                                      Результаты поиска
-                                      {isSearchPending && (
-                                        <IconLoader className="h-3.5 w-3.5 shrink-0 animate-spin text-muted-foreground" aria-hidden />
-                                      )}
+                                    <BreadcrumbPage className="inline-flex items-center gap-1 text-muted-foreground">
+                                      <IconHome className="h-4 w-4 shrink-0" aria-hidden />
+                                      <span className="sr-only">Корень</span>
                                     </BreadcrumbPage>
                                   </BreadcrumbItem>
-                                </>
-                              ) : drillPath.length > 0 ? (
-                                <>
-                                  <BreadcrumbItem className="shrink-0">
-                                    <BreadcrumbLink asChild>
-                                      <button
-                                        type="button"
-                                        onClick={() => drillTo(-1)}
-                                        className="inline-flex items-center gap-1 rounded p-1 -ml-1 hover:text-foreground hover:bg-muted/80 transition-colors"
-                                        aria-label="В корень"
-                                      >
-                                        <IconHome className="h-4 w-4 shrink-0" />
-                                      </button>
-                                    </BreadcrumbLink>
-                                  </BreadcrumbItem>
-                                  {drillPath.map((node, idx) => (
-                                    <React.Fragment key={node.Код ?? idx}>
-                                      <BreadcrumbSeparator className="shrink-0" />
-                                      <BreadcrumbItem className="shrink-0 min-w-0 max-w-[180px]">
-                                        {idx === drillPath.length - 1 ? (
-                                          <BreadcrumbPage className="truncate block" title={node.Наименование ?? undefined}>
-                                            {node.Наименование}
-                                          </BreadcrumbPage>
-                                        ) : (
-                                          <BreadcrumbLink asChild>
-                                            <button
-                                              type="button"
-                                              onClick={() => drillTo(idx)}
-                                              className="truncate block text-left w-full hover:text-foreground"
-                                              title={node.Наименование ?? undefined}
-                                            >
-                                              {node.Наименование}
-                                            </button>
-                                          </BreadcrumbLink>
-                                        )}
-                                      </BreadcrumbItem>
-                                    </React.Fragment>
-                                  ))}
-                                </>
-                              ) : (
-                                <BreadcrumbItem className="shrink-0">
-                                  <BreadcrumbPage className="inline-flex items-center gap-1 text-muted-foreground">
-                                    <IconHome className="h-4 w-4 shrink-0" aria-hidden />
-                                    <span className="sr-only">Корень</span>
-                                  </BreadcrumbPage>
-                                </BreadcrumbItem>
-                              )}
-                            </BreadcrumbList>
-                          </Breadcrumb>
-                          <div className="flex items-center gap-6 mr-6">
-                            <label className="flex items-center gap-2 cursor-pointer text-sm text-muted-foreground hover:text-foreground select-none">
-                              <Checkbox
-                                checked={showHiddenGroups}
-                                onCheckedChange={(v) => setShowHiddenGroups(v === true)}
-                                aria-label="Отображать скрытые группы"
-                              />
-                              <span>Отображать скрытые группы</span>
-                            </label>
-                            <label className="flex items-center gap-2 cursor-pointer text-sm text-muted-foreground hover:text-foreground select-none">
-                              <Checkbox
-                                checked={showZeroBalances}
-                                onCheckedChange={(v) => setShowZeroBalances(v === true)}
-                                aria-label="Отображать нулевые остатки"
-                              />
-                              <span>Отображать нулевые остатки</span>
-                            </label>
+                                )}
+                              </BreadcrumbList>
+                            </Breadcrumb>
+                            <div className="flex items-center gap-6 mr-6">
+                              <label className="flex items-center gap-2 cursor-pointer text-sm text-muted-foreground hover:text-foreground select-none">
+                                <Checkbox
+                                  checked={showHiddenGroups}
+                                  onCheckedChange={(v) => setShowHiddenGroups(v === true)}
+                                  aria-label="Отображать скрытые группы"
+                                />
+                                <span>Отображать скрытые группы</span>
+                              </label>
+                              <label className="flex items-center gap-2 cursor-pointer text-sm text-muted-foreground hover:text-foreground select-none">
+                                <Checkbox
+                                  checked={showZeroBalances}
+                                  onCheckedChange={(v) => setShowZeroBalances(v === true)}
+                                  aria-label="Отображать нулевые остатки"
+                                />
+                                <span>Отображать нулевые остатки</span>
+                              </label>
+                            </div>
                           </div>
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  </TableHeader>
-                <TableHeader className="bg-muted">
-                  <TableRow>
-                      <TableHead className="w-[150px] min-w-[150px] max-w-[150px]">Код</TableHead>
-                      <TableHead className="min-w-[280px]">Номенклатура</TableHead>
-                      <TableHead className="min-w-[200px]">Склад</TableHead>
-                      <TableHead className="w-[120px] text-right">Количество</TableHead>
-                    <TableHead className="w-20">Ед. изм.</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                    {materialsLoading ? (
-                    <TableRow>
-                      <TableCell colSpan={4} className="h-24 text-center text-muted-foreground">
-                          Загрузка номенклатуры...
                         </TableCell>
                       </TableRow>
-                    ) : materialsError ? (
+                    </TableHeader>
+                    <TableHeader className="bg-muted">
                       <TableRow>
-                        <TableCell colSpan={4} className="h-24 text-center text-destructive">
-                          {materialsError}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                      displayLevel.flatMap((node) => {
-                        const isGroup = node.ЭтоГруппа
-                        const balanceRows = !isGroup ? balances.filter((b) => b.Код === node.Код) : []
-                        const totalQty = balanceRows.reduce((s, r) => s + r.Количество, 0)
+                        <TableHead className="w-[150px] min-w-[150px] max-w-[150px]">Код</TableHead>
+                        <TableHead className="min-w-[280px]">Номенклатура</TableHead>
+                        <TableHead className="min-w-[200px]">Склад</TableHead>
+                        <TableHead className="w-[120px] text-right">Количество</TableHead>
+                        <TableHead className="w-20">Ед. изм.</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {materialsLoading ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="h-24 text-center text-muted-foreground">
+                            Загрузка номенклатуры...
+                          </TableCell>
+                        </TableRow>
+                      ) : materialsError ? (
+                        <TableRow>
+                          <TableCell colSpan={5} className="h-24 text-center text-destructive">
+                            {materialsError}
+                          </TableCell>
+                        </TableRow>
+                      ) : (
+                        displayLevel.flatMap((node) => {
+                          const isGroup = node.ЭтоГруппа
+                          const balanceRows = !isGroup ? balances.filter((b) => b.Код === node.Код) : []
+                          const totalQty = balanceRows.reduce((s, r) => s + r.Количество, 0)
 
-                        // При поиске конкретного материала показываем остатки по каждому складу
-                        if (!isGroup && searchResults !== null && balanceRows.length > 0) {
-                          return balanceRows.map((balRow, idx) => (
+                          // При поиске конкретного материала показываем остатки по каждому складу
+                          if (!isGroup && searchResults !== null && balanceRows.length > 0) {
+                            return balanceRows.map((balRow, idx) => (
+                              <TableRow
+                                key={`m-${node.Код}-${balRow.Склад || idx}`}
+                                className="cursor-pointer hover:bg-muted/30"
+                                onClick={() => idx === 0 && setSelectedMaterial(node)}
+                              >
+                                {/* Код показываем только в первой строке */}
+                                <TableCell className="align-middle py-1 w-[150px] min-w-[150px] max-w-[150px]">
+                                  {idx === 0 && node.Код ? (
+                                    <button
+                                      type="button"
+                                      onClick={(e) => {
+                                        e.stopPropagation()
+                                        navigator.clipboard.writeText(node.Код)
+                                        toast.success(`Код ${node.Код} скопирован`)
+                                      }}
+                                      className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group text-sm"
+                                      title="Копировать код"
+                                    >
+                                      <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}>
+                                        {node.Код}
+                                      </span>
+                                      <IconCopy className="h-3.5 w-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity shrink-0" />
+                                    </button>
+                                  ) : null}
+                                </TableCell>
+                                {/* Наименование показываем только в первой строке */}
+                                <TableCell className="align-middle py-1">
+                                  {idx === 0 && (
+                                    <div className="flex items-center gap-1.5 min-h-8">
+                                      {(() => {
+                                        const code = node.Код ?? ""
+                                        const isFavorite = materialPrefs[code]?.favorite ?? false
+                                        const hasReorderPoint = reorderPoints.some((rp) =>
+                                          rp.itemCode === code || (rp.isGroup && Array.isArray(rp.itemCodes) && rp.itemCodes.includes(code))
+                                        )
+                                        return (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                setMaterialPref(code, { favorite: !isFavorite })
+                                              }}
+                                              className={cn(
+                                                "shrink-0 rounded p-1 transition-colors",
+                                                isFavorite
+                                                  ? "text-amber-500 hover:text-amber-600"
+                                                  : "text-muted-foreground hover:text-foreground"
+                                              )}
+                                              title={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
+                                              aria-label={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
+                                            >
+                                              <IconStar
+                                                className={cn("h-4 w-4", isFavorite && "fill-current")}
+                                                aria-hidden
+                                              />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleOpenDialogForMaterial(code)
+                                              }}
+                                              className={cn(
+                                                "shrink-0 rounded p-1 transition-colors",
+                                                hasReorderPoint
+                                                  ? "text-blue-500 hover:text-blue-600"
+                                                  : "text-muted-foreground hover:text-foreground"
+                                              )}
+                                              title={hasReorderPoint ? "Точка заказа установлена — изменить" : "Установить точку заказа"}
+                                              aria-label={hasReorderPoint ? "Изменить точку заказа" : "Установить точку заказа"}
+                                            >
+                                              <IconBookmark
+                                                className={cn("h-4 w-4", hasReorderPoint && "fill-current")}
+                                                aria-hidden
+                                              />
+                                            </button>
+                                          </>
+                                        )
+                                      })()}
+                                      <span className="truncate font-medium">{node.Наименование}</span>
+                                    </div>
+                                  )}
+                                </TableCell>
+                                {/* Склад */}
+                                <TableCell className="align-middle py-1">
+                                  {balRow.Склад || "—"}
+                                </TableCell>
+                                {/* Количество на этом складе */}
+                                <TableCell className="align-middle py-1 text-right tabular-nums">
+                                  {formatMaterialQty(balRow.Количество)}
+                                </TableCell>
+                                {/* Единица измерения */}
+                                <TableCell className="align-middle py-1 text-muted-foreground">
+                                  {formatUnit(balRow.ЕдиницаИзмерения)}
+                                </TableCell>
+                              </TableRow>
+                            ))
+                          }
+
+                          // В обычном режиме (без поиска) показываем суммарный остаток
+                          return (
                             <TableRow
-                              key={`m-${node.Код}-${balRow.Склад || idx}`}
+                              key={isGroup ? `g-${node.Код}` : `m-${node.Код}`}
+                              className={cn(
+                                isGroup && "bg-muted/30",
+                                !isGroup && "cursor-pointer hover:bg-muted/30"
+                              )}
+                              onClick={() => !isGroup && setSelectedMaterial(node)}
                             >
-                              {/* Код показываем только в первой строке */}
                               <TableCell className="align-middle py-1 w-[150px] min-w-[150px] max-w-[150px]">
-                                {idx === 0 && node.Код ? (
+                                {!isGroup && node.Код ? (
                                   <button
                                     type="button"
-                                    onClick={() => {
+                                    onClick={(e) => {
+                                      e.stopPropagation()
                                       navigator.clipboard.writeText(node.Код)
                                       toast.success(`Код ${node.Код} скопирован`)
                                     }}
@@ -1271,244 +1542,148 @@ export function WarehouseBalanceView() {
                                   </button>
                                 ) : null}
                               </TableCell>
-                              {/* Наименование показываем только в первой строке */}
                               <TableCell className="align-middle py-1">
-                                {idx === 0 && (
-                                  <div className="flex items-center gap-1.5 min-h-8">
-                                    {(() => {
-                                      const code = node.Код ?? ""
-                                      const isFavorite = materialPrefs[code]?.favorite ?? false
-                                      const hasReorderPoint = reorderPoints.some((rp) =>
-                                        rp.itemCode === code || (rp.isGroup && Array.isArray(rp.itemCodes) && rp.itemCodes.includes(code))
-                                      )
-                                      return (
-                                        <>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              setMaterialPref(code, { favorite: !isFavorite })
-                                            }}
-                                            className={cn(
-                                              "shrink-0 rounded p-1 transition-colors",
-                                              isFavorite
-                                                ? "text-amber-500 hover:text-amber-600"
-                                                : "text-muted-foreground hover:text-foreground"
-                                            )}
-                                            title={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
-                                            aria-label={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
-                                          >
-                                            <IconStar
-                                              className={cn("h-4 w-4", isFavorite && "fill-current")}
-                                              aria-hidden
-                                            />
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              handleOpenDialogForMaterial(code)
-                                            }}
-                                            className={cn(
-                                              "shrink-0 rounded p-1 transition-colors",
-                                              hasReorderPoint
-                                                ? "text-blue-500 hover:text-blue-600"
-                                                : "text-muted-foreground hover:text-foreground"
-                                            )}
-                                            title={hasReorderPoint ? "Точка заказа установлена — изменить" : "Установить точку заказа"}
-                                            aria-label={hasReorderPoint ? "Изменить точку заказа" : "Установить точку заказа"}
-                                          >
-                                            <IconBookmark
-                                              className={cn("h-4 w-4", hasReorderPoint && "fill-current")}
-                                              aria-hidden
-                                            />
-                                          </button>
-                                        </>
-                                      )
-                                    })()}
-                                    <span className="truncate font-medium">{node.Наименование}</span>
-                                  </div>
-                                )}
+                                <div className="flex items-center gap-1.5 min-h-8">
+                                  {isGroup ? (
+                                    <>
+                                      {(() => {
+                                        const code = node.Код ?? ""
+                                        const pref = groupPrefs[code] ?? { favorite: false, hidden: false }
+                                        const isHidden = pref.hidden
+                                        const isFavorite = pref.favorite
+                                        return (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                if (isHidden) return
+                                                setGroupPref(code, { favorite: !isFavorite })
+                                              }}
+                                              disabled={isHidden}
+                                              className={cn(
+                                                "shrink-0 rounded p-1 transition-colors",
+                                                isFavorite
+                                                  ? "text-amber-500 hover:text-amber-600"
+                                                  : "text-muted-foreground hover:text-foreground",
+                                                isHidden && "opacity-40 cursor-not-allowed"
+                                              )}
+                                              title={isHidden ? "Скрытая группа не может быть в избранном" : isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
+                                              aria-label={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
+                                            >
+                                              <IconStar
+                                                className={cn("h-4 w-4", isFavorite && "fill-current")}
+                                                aria-hidden
+                                              />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                setGroupPref(code, { hidden: !isHidden })
+                                              }}
+                                              className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground transition-colors"
+                                              title={isHidden ? "Показать группу" : "Скрыть группу"}
+                                              aria-label={isHidden ? "Показать группу" : "Скрыть группу"}
+                                            >
+                                              {isHidden ? (
+                                                <IconEye className="h-4 w-4" aria-hidden />
+                                              ) : (
+                                                <IconEyeOff className="h-4 w-4" aria-hidden />
+                                              )}
+                                            </button>
+                                          </>
+                                        )
+                                      })()}
+                                      <Button
+                                        type="button"
+                                        variant="ghost"
+                                        size="sm"
+                                        onClick={(e) => {
+                                          e.stopPropagation()
+                                          drillInto(node)
+                                        }}
+                                        className="group h-8 flex-1 justify-start gap-2 font-medium hover:bg-muted/50 min-w-0"
+                                      >
+                                        <IconChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                        <IconFolder className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                        <span className="truncate">{node.Наименование}</span>
+                                      </Button>
+                                    </>
+                                  ) : (
+                                    <>
+                                      {(() => {
+                                        const code = node.Код ?? ""
+                                        const isFavorite = materialPrefs[code]?.favorite ?? false
+                                        const hasReorderPoint = reorderPoints.some((rp) =>
+                                          rp.itemCode === code || (rp.isGroup && Array.isArray(rp.itemCodes) && rp.itemCodes.includes(code))
+                                        )
+                                        return (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                setMaterialPref(code, { favorite: !isFavorite })
+                                              }}
+                                              className={cn(
+                                                "shrink-0 rounded p-1 transition-colors",
+                                                isFavorite
+                                                  ? "text-amber-500 hover:text-amber-600"
+                                                  : "text-muted-foreground hover:text-foreground"
+                                              )}
+                                              title={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
+                                              aria-label={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
+                                            >
+                                              <IconStar
+                                                className={cn("h-4 w-4", isFavorite && "fill-current")}
+                                                aria-hidden
+                                              />
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation()
+                                                handleOpenDialogForMaterial(code)
+                                              }}
+                                              className={cn(
+                                                "shrink-0 rounded p-1 transition-colors",
+                                                hasReorderPoint
+                                                  ? "text-blue-500 hover:text-blue-600"
+                                                  : "text-muted-foreground hover:text-foreground"
+                                              )}
+                                              title={hasReorderPoint ? "Точка заказа установлена — изменить" : "Установить точку заказа"}
+                                              aria-label={hasReorderPoint ? "Изменить точку заказа" : "Установить точку заказа"}
+                                            >
+                                              <IconBookmark
+                                                className={cn("h-4 w-4", hasReorderPoint && "fill-current")}
+                                                aria-hidden
+                                              />
+                                            </button>
+                                          </>
+                                        )
+                                      })()}
+                                      <span className="truncate font-medium">{node.Наименование}</span>
+                                    </>
+                                  )}
+                                </div>
                               </TableCell>
-                              {/* Склад */}
+                              {/* Склад (в обычном режиме пусто) */}
                               <TableCell className="align-middle py-1">
-                                {balRow.Склад || "—"}
+                                —
                               </TableCell>
-                              {/* Количество на этом складе */}
                               <TableCell className="align-middle py-1 text-right tabular-nums">
-                                {formatMaterialQty(balRow.Количество)}
+                                {!isGroup ? formatMaterialQty(totalQty) : null}
                               </TableCell>
-                              {/* Единица измерения */}
                               <TableCell className="align-middle py-1 text-muted-foreground">
-                                {formatUnit(balRow.ЕдиницаИзмерения)}
+                                {!isGroup ? formatUnit(node.ЕдиницаИзмерения) : null}
                               </TableCell>
                             </TableRow>
-                          ))
-                        }
-
-                        // В обычном режиме (без поиска) показываем суммарный остаток
-                        return (
-                          <TableRow
-                            key={isGroup ? `g-${node.Код}` : `m-${node.Код}`}
-                            className={cn(isGroup && "bg-muted/30")}
-                          >
-                            <TableCell className="align-middle py-1 w-[150px] min-w-[150px] max-w-[150px]">
-                              {!isGroup && node.Код ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                    navigator.clipboard.writeText(node.Код)
-                                    toast.success(`Код ${node.Код} скопирован`)
-                              }}
-                                  className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group text-sm"
-                              title="Копировать код"
-                            >
-                              <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}>
-                                    {node.Код}
-                              </span>
-                                  <IconCopy className="h-3.5 w-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity shrink-0" />
-                            </button>
-                              ) : null}
-                        </TableCell>
-                            <TableCell className="align-middle py-1">
-                              <div className="flex items-center gap-1.5 min-h-8">
-                                {isGroup ? (
-                                  <>
-                                    {(() => {
-                                      const code = node.Код ?? ""
-                                      const pref = groupPrefs[code] ?? { favorite: false, hidden: false }
-                                      const isHidden = pref.hidden
-                                      const isFavorite = pref.favorite
-                                      return (
-                                        <>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              if (isHidden) return
-                                              setGroupPref(code, { favorite: !isFavorite })
-                                            }}
-                                            disabled={isHidden}
-                                            className={cn(
-                                              "shrink-0 rounded p-1 transition-colors",
-                                              isFavorite
-                                                ? "text-amber-500 hover:text-amber-600"
-                                                : "text-muted-foreground hover:text-foreground",
-                                              isHidden && "opacity-40 cursor-not-allowed"
-                                            )}
-                                            title={isHidden ? "Скрытая группа не может быть в избранном" : isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
-                                            aria-label={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
-                                          >
-                                            <IconStar
-                                              className={cn("h-4 w-4", isFavorite && "fill-current")}
-                                              aria-hidden
-                                            />
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              setGroupPref(code, { hidden: !isHidden })
-                                            }}
-                                            className="shrink-0 rounded p-1 text-muted-foreground hover:text-foreground transition-colors"
-                                            title={isHidden ? "Показать группу" : "Скрыть группу"}
-                                            aria-label={isHidden ? "Показать группу" : "Скрыть группу"}
-                                          >
-                                            {isHidden ? (
-                                              <IconEye className="h-4 w-4" aria-hidden />
-                                            ) : (
-                                              <IconEyeOff className="h-4 w-4" aria-hidden />
-                                            )}
-                                          </button>
-                                        </>
-                                      )
-                                    })()}
-                    <Button
-                                      type="button"
-                                      variant="ghost"
-                      size="sm"
-                                      onClick={() => drillInto(node)}
-                                      className="group h-8 flex-1 justify-start gap-2 font-medium hover:bg-muted/50 min-w-0"
-                    >
-                                      <IconChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                      <IconFolder className="h-4 w-4 shrink-0 text-muted-foreground" />
-                                      <span className="truncate">{node.Наименование}</span>
-                    </Button>
-                                  </>
-                                ) : (
-                                  <>
-                                    {(() => {
-                                      const code = node.Код ?? ""
-                                      const isFavorite = materialPrefs[code]?.favorite ?? false
-                                      const hasReorderPoint = reorderPoints.some((rp) =>
-                                        rp.itemCode === code || (rp.isGroup && Array.isArray(rp.itemCodes) && rp.itemCodes.includes(code))
-                                      )
-                                      return (
-                                        <>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              setMaterialPref(code, { favorite: !isFavorite })
-                                            }}
-                                            className={cn(
-                                              "shrink-0 rounded p-1 transition-colors",
-                                              isFavorite
-                                                ? "text-amber-500 hover:text-amber-600"
-                                                : "text-muted-foreground hover:text-foreground"
-                                            )}
-                                            title={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
-                                            aria-label={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
-                                          >
-                                            <IconStar
-                                              className={cn("h-4 w-4", isFavorite && "fill-current")}
-                                              aria-hidden
-                                            />
-                                          </button>
-                                          <button
-                                            type="button"
-                                            onClick={(e) => {
-                                              e.stopPropagation()
-                                              handleOpenDialogForMaterial(code)
-                                            }}
-                                            className={cn(
-                                              "shrink-0 rounded p-1 transition-colors",
-                                              hasReorderPoint
-                                                ? "text-blue-500 hover:text-blue-600"
-                                                : "text-muted-foreground hover:text-foreground"
-                                            )}
-                                            title={hasReorderPoint ? "Точка заказа установлена — изменить" : "Установить точку заказа"}
-                                            aria-label={hasReorderPoint ? "Изменить точку заказа" : "Установить точку заказа"}
-                                          >
-                                            <IconBookmark
-                                              className={cn("h-4 w-4", hasReorderPoint && "fill-current")}
-                                              aria-hidden
-                                            />
-                                          </button>
-                                        </>
-                                      )
-                                    })()}
-                                    <span className="truncate font-medium">{node.Наименование}</span>
-                                  </>
-                                )}
-                  </div>
-                            </TableCell>
-                            {/* Склад (в обычном режиме пусто) */}
-                            <TableCell className="align-middle py-1">
-                              —
-                            </TableCell>
-                            <TableCell className="align-middle py-1 text-right tabular-nums">
-                              {!isGroup ? formatMaterialQty(totalQty) : null}
-                            </TableCell>
-                            <TableCell className="align-middle py-1 text-muted-foreground">
-                              {!isGroup ? formatUnit(node.ЕдиницаИзмерения) : null}
-                            </TableCell>
-                          </TableRow>
-                        )
-                      })
-                    )}
-                  </TableBody>
-                </Table>
+                          )
+                        })
+                      )}
+                    </TableBody>
+                  </Table>
                 )}
               </div>
             </div>
@@ -1536,131 +1711,131 @@ export function WarehouseBalanceView() {
                   </Empty>
                 </div>
               ) : (
-              <Table>
-                <TableHeader className="bg-muted">
-                  <TableRow>
-                    <TableHead className="w-[120px]">Код</TableHead>
-                    <TableHead>Наименование</TableHead>
-                    <TableHead className="text-right">Точка заказа</TableHead>
-                    <TableHead className="text-right">Текущий остаток</TableHead>
-                    <TableHead className="text-right">Разница</TableHead>
-                    <TableHead className="w-20">Ед. изм.</TableHead>
-                    <TableHead className="w-24" />
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reorderLoading ? (
+                <Table>
+                  <TableHeader className="bg-muted">
                     <TableRow>
-                      <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
-                        Загрузка точек заказа...
-                      </TableCell>
+                      <TableHead className="w-[120px]">Код</TableHead>
+                      <TableHead>Наименование</TableHead>
+                      <TableHead className="text-right">Точка заказа</TableHead>
+                      <TableHead className="text-right">Текущий остаток</TableHead>
+                      <TableHead className="text-right">Разница</TableHead>
+                      <TableHead className="w-20">Ед. изм.</TableHead>
+                      <TableHead className="w-24" />
                     </TableRow>
-                  ) : reorderError ? (
-                    <TableRow>
-                      <TableCell colSpan={7} className="h-24 text-center text-destructive">
-                        {reorderError}
-                      </TableCell>
-                    </TableRow>
-                  ) : (
-                    reorderPoints.map((point) => {
-                      const ptBalances = filterBalancesByWarehouses(balances, point.warehouseCodes, warehouses)
-                      const codes = point.isGroup && Array.isArray(point.itemCodes)
-                        ? point.itemCodes
-                        : [point.itemCode]
-                      const currentQty = codes.reduce((s, c) => {
-                        const rows = ptBalances.filter((r) => r.Код === c)
-                        return s + rows.reduce((sum, r) => sum + (r.Количество ?? 0), 0)
-                      }, 0)
-                      const diff = currentQty - Number(point.reorderQuantity)
+                  </TableHeader>
+                  <TableBody>
+                    {reorderLoading ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="h-24 text-center text-muted-foreground">
+                          Загрузка точек заказа...
+                        </TableCell>
+                      </TableRow>
+                    ) : reorderError ? (
+                      <TableRow>
+                        <TableCell colSpan={7} className="h-24 text-center text-destructive">
+                          {reorderError}
+                        </TableCell>
+                      </TableRow>
+                    ) : (
+                      reorderPoints.map((point) => {
+                        const ptBalances = filterBalancesByWarehouses(balances, point.warehouseCodes, warehouses)
+                        const codes = point.isGroup && Array.isArray(point.itemCodes)
+                          ? point.itemCodes
+                          : [point.itemCode]
+                        const currentQty = codes.reduce((s, c) => {
+                          const rows = ptBalances.filter((r) => r.Код === c)
+                          return s + rows.reduce((sum, r) => sum + (r.Количество ?? 0), 0)
+                        }, 0)
+                        const diff = currentQty - Number(point.reorderQuantity)
 
-                      return (
-                        <TableRow
-                          key={point.id}
-                          className="h-10 cursor-pointer hover:bg-muted/50"
-                          onClick={() => setDetailsPoint(point)}
-                        >
-                          <TableCell className="text-sm py-1">
-                            {point.isGroup ? (
-                              <Badge variant="outline" className="text-xs font-normal">
-                                {codes.length} поз.
-                              </Badge>
-                            ) : point.itemCode ? (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                navigator.clipboard.writeText(point.itemCode)
-                                toast.success(`Код ${point.itemCode} скопирован`)
-                              }}
-                              className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group"
-                              title="Копировать код"
-                            >
-                              <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}>
-                                {point.itemCode}
+                        return (
+                          <TableRow
+                            key={point.id}
+                            className="h-10 cursor-pointer hover:bg-muted/50"
+                            onClick={() => setDetailsPoint(point)}
+                          >
+                            <TableCell className="text-sm py-1">
+                              {point.isGroup ? (
+                                <Badge variant="outline" className="text-xs font-normal">
+                                  {codes.length} поз.
+                                </Badge>
+                              ) : point.itemCode ? (
+                                <button
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation()
+                                    navigator.clipboard.writeText(point.itemCode)
+                                    toast.success(`Код ${point.itemCode} скопирован`)
+                                  }}
+                                  className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group"
+                                  title="Копировать код"
+                                >
+                                  <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}>
+                                    {point.itemCode}
+                                  </span>
+                                  <IconCopy className="h-3.5 w-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity" />
+                                </button>
+                              ) : null}
+                            </TableCell>
+                            <TableCell className="font-medium">{point.itemName}</TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatMaterialQty(Number(point.reorderQuantity))}
+                            </TableCell>
+                            <TableCell className="text-right tabular-nums">
+                              {formatMaterialQty(currentQty)}
+                            </TableCell>
+                            <TableCell className="text-right">
+                              <span
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-sm font-bold tabular-nums",
+                                  diff > 0
+                                    ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-400 dark:border-emerald-400/30"
+                                    : diff < 0
+                                      ? "bg-red-500/10 text-red-600 border-red-500/30 dark:text-red-400 dark:border-red-400/30"
+                                      : "bg-muted text-muted-foreground border-border"
+                                )}
+                              >
+                                {diff > 0 && <IconCaretUpFilled className="h-3 w-3" aria-hidden />}
+                                {diff < 0 && <IconCaretDownFilled className="h-3 w-3" aria-hidden />}
+                                {diff > 0 ? "+" : ""}
+                                {formatMaterialQty(diff)}
                               </span>
-                              <IconCopy className="h-3.5 w-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity" />
-                            </button>
-                            ) : null}
-                          </TableCell>
-                          <TableCell className="font-medium">{point.itemName}</TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatMaterialQty(Number(point.reorderQuantity))}
-                          </TableCell>
-                          <TableCell className="text-right tabular-nums">
-                            {formatMaterialQty(currentQty)}
-                          </TableCell>
-                          <TableCell className="text-right">
-                            <span
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-lg border px-2 py-0.5 text-sm font-bold tabular-nums",
-                                diff > 0
-                                  ? "bg-emerald-500/10 text-emerald-600 border-emerald-500/30 dark:text-emerald-400 dark:border-emerald-400/30"
-                                  : diff < 0
-                                    ? "bg-red-500/10 text-red-600 border-red-500/30 dark:text-red-400 dark:border-red-400/30"
-                                    : "bg-muted text-muted-foreground border-border"
-                              )}
-                            >
-                              {diff > 0 && <IconCaretUpFilled className="h-3 w-3" aria-hidden />}
-                              {diff < 0 && <IconCaretDownFilled className="h-3 w-3" aria-hidden />}
-                            {diff > 0 ? "+" : ""}
-                            {formatMaterialQty(diff)}
-                            </span>
-                          </TableCell>
-                          <TableCell className="text-muted-foreground">
-                            {formatUnit(point.unit)}
-                          </TableCell>
-                          <TableCell onClick={(e) => e.stopPropagation()}>
-                            <div className="flex items-center gap-1">
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleOpenDialog(point)}
-                                className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
-                                title="Редактировать"
-                              >
-                                <IconEdit className="h-4 w-4" />
-                              </Button>
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => setItemToDelete({ id: point.id, name: point.itemName })}
-                                className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
-                                title="Удалить"
-                              >
-                                <IconTrash className="h-4 w-4" />
-                              </Button>
-                            </div>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })
-                  )}
-                </TableBody>
-              </Table>
+                            </TableCell>
+                            <TableCell className="text-muted-foreground">
+                              {formatUnit(point.unit)}
+                            </TableCell>
+                            <TableCell onClick={(e) => e.stopPropagation()}>
+                              <div className="flex items-center gap-1">
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleOpenDialog(point)}
+                                  className="h-7 w-7 p-0 text-muted-foreground hover:text-primary"
+                                  title="Редактировать"
+                                >
+                                  <IconEdit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => setItemToDelete({ id: point.id, name: point.itemName })}
+                                  className="h-7 w-7 p-0 text-muted-foreground hover:text-destructive"
+                                  title="Удалить"
+                                >
+                                  <IconTrash className="h-4 w-4" />
+                                </Button>
+                              </div>
+                            </TableCell>
+                          </TableRow>
+                        )
+                      })
+                    )}
+                  </TableBody>
+                </Table>
               )}
             </div>
           </TabsContent>
         </Tabs>
-      </div>
 
       {/* Sheet добавления/редактирования точки заказа */}
       <Sheet open={dialogOpen} onOpenChange={(open) => !open && handleCloseDialog()}>
@@ -1672,7 +1847,7 @@ export function WarehouseBalanceView() {
                 <SheetDescription className="mt-1">
                   Выберите материал(ы) и укажите минимальное количество. При нескольких материалах отслеживается суммарный остаток.
                 </SheetDescription>
-                </div>
+              </div>
               <div className="flex items-center gap-1.5 shrink-0">
                 <Button variant="outline" size="sm" onClick={handleCloseDialog} disabled={submitting}>
                   Отмена
@@ -1762,29 +1937,29 @@ export function WarehouseBalanceView() {
                       return 0
                     })
                     .map((wh) => {
-                    const code = String(wh.Код ?? "")
-                    const name = wh.Наименование ?? code
-                    const checked = selectedWarehouseCodes.includes(code)
-                    return (
-                      <label
-                        key={code}
-                        className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1.5 text-sm"
-                      >
-                        <Checkbox
-                          checked={checked}
-                          onCheckedChange={(v) => {
-                            setSelectedWarehouseCodes((prev) =>
-                              v ? [...prev, code] : prev.filter((c) => c !== code)
-                            )
-                          }}
-                        />
-                        <span className="truncate">{name}</span>
-                        {code && (
-                          <span className="text-muted-foreground font-mono text-xs">{code}</span>
-                        )}
-                      </label>
-                    )
-                  })}
+                      const code = String(wh.Код ?? "")
+                      const name = wh.Наименование ?? code
+                      const checked = selectedWarehouseCodes.includes(code)
+                      return (
+                        <label
+                          key={code}
+                          className="flex items-center gap-2 cursor-pointer hover:bg-muted/50 rounded px-2 py-1.5 text-sm"
+                        >
+                          <Checkbox
+                            checked={checked}
+                            onCheckedChange={(v) => {
+                              setSelectedWarehouseCodes((prev) =>
+                                v ? [...prev, code] : prev.filter((c) => c !== code)
+                              )
+                            }}
+                          />
+                          <span className="truncate">{name}</span>
+                          {code && (
+                            <span className="text-muted-foreground font-mono text-xs">{code}</span>
+                          )}
+                        </label>
+                      )
+                    })}
                 </div>
               )}
               {selectedWarehouseCodes.length > 0 && (
@@ -1913,15 +2088,13 @@ export function WarehouseBalanceView() {
         </SheetContent>
       </Sheet>
 
-      {/* Alert Dialog для подтверждения удаления */}
+      {/* AlertDialog удаления точки заказа */}
       <AlertDialog open={itemToDelete !== null} onOpenChange={(open) => !open && setItemToDelete(null)}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>Удалить точку заказа?</AlertDialogTitle>
             <AlertDialogDescription>
-              Это действие нельзя отменить. Точка заказа{" "}
-              <span className="font-semibold">{itemToDelete?.name}</span>{" "}
-              будет удалена из мониторинга.
+              Вы собираетесь удалить точку заказа <strong>{itemToDelete?.name}</strong>. Это действие нельзя отменить.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -1932,31 +2105,162 @@ export function WarehouseBalanceView() {
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Sheet с деталями материала */}
+      <Sheet open={selectedMaterial !== null} onOpenChange={(open) => !open && setSelectedMaterial(null)}>
+        <SheetContent
+          side="right"
+          className="flex flex-col p-0 overflow-hidden w-full sm:w-1/2 sm:max-w-none border-l"
+          showCloseButton={false}
+        >
+          {selectedMaterial && (
+            <>
+              {/* Заголовок: наименование крупно, под ним код с копированием */}
+              <SheetHeader className="shrink-0 px-6 pr-12 pt-6 pb-4 border-b">
+                <div className="flex flex-col gap-1">
+                  <SheetTitle className="text-xl font-bold tracking-tight text-foreground">
+                    {selectedMaterial.Наименование}
+                  </SheetTitle>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      navigator.clipboard.writeText(selectedMaterial.Код)
+                      toast.success(`Код ${selectedMaterial.Код} скопирован`)
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group w-fit text-sm font-mono text-muted-foreground"
+                    style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}
+                    title="Копировать код"
+                  >
+                    <span>{selectedMaterial.Код}</span>
+                    <IconCopy className="h-3.5 w-3.5 shrink-0" />
+                  </button>
+                </div>
+              </SheetHeader>
+
+              <div className="flex-1 overflow-y-auto">
+                <div className="px-6 py-6 space-y-6">
+                  {/* Основная информация */}
+                  <Card className="py-4">
+                    <CardContent className="pt-0 px-6 pb-0">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                          Основная информация
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => generateQRCode(selectedMaterial.Код)}
+                          className="h-7 gap-1.5"
+                        >
+                          <IconQrcode className="h-3.5 w-3.5" />
+                          QR-код остатков
+                        </Button>
+                      </div>
+                      <Separator className="mb-3" />
+                      <div className="grid grid-cols-3 gap-x-8 gap-y-4">
+                        {selectedMaterial.ЕдиницаИзмерения && (
+                          <div className="space-y-1">
+                            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                              Единица измерения
+                            </p>
+                            <p className="text-sm font-normal">{formatUnit(selectedMaterial.ЕдиницаИзмерения)}</p>
+                          </div>
+                        )}
+                        {selectedMaterial.ВидНоменклатуры && (
+                          <div className="space-y-1">
+                            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                              Вид номенклатуры
+                            </p>
+                            <p className="text-sm font-normal">{selectedMaterial.ВидНоменклатуры}</p>
+                          </div>
+                        )}
+                        {selectedMaterial.НоменклатурнаяГруппа && (
+                          <div className="space-y-1">
+                            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                              Группа
+                            </p>
+                            <p className="text-sm font-normal">{selectedMaterial.НоменклатурнаяГруппа}</p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Остатки по складам */}
+                  {selectedMaterial.Остатки && selectedMaterial.Остатки.length > 0 && (
+                    <Card className="overflow-hidden gap-1.5 py-4">
+                      <CardHeader className="py-0 px-6">
+                        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                          Остатки по складам
+                          <span className="ml-2 font-normal normal-case text-foreground">
+                            {selectedMaterial.Остатки.length}
+                          </span>
+                        </p>
+                        <Separator className="my-3" />
+                      </CardHeader>
+                      <CardContent className="pt-0 px-6 pb-0">
+                        <div className="rounded-lg border divide-y bg-muted/20">
+                          {selectedMaterial.Остатки.map((balance, idx) => (
+                            <div key={idx} className="flex items-center justify-between px-4 py-3">
+                              <div className="flex flex-col gap-0.5">
+                                <p className="text-sm font-medium">{balance.Склад}</p>
+                              </div>
+                              <div className="text-right">
+                                <p className="text-sm font-semibold tabular-nums">
+                                  {formatMaterialQty(balance.Количество)} {formatUnit(selectedMaterial.ЕдиницаИзмерения)}
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Dialog с QR-кодом */}
+      <Dialog open={qrCodeOpen} onOpenChange={setQrCodeOpen}>
+        <DialogContent className="sm:max-w-md !left-[75%] !top-[50%] !-translate-x-1/2 !-translate-y-1/2">
+          <DialogHeader>
+            <DialogTitle>QR-код остатков</DialogTitle>
+            <DialogDescription>
+              Сканируйте QR-код для быстрого просмотра остатков материала
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-4">
+            {qrCodeDataUrl && (
+              <img
+                src={qrCodeDataUrl}
+                alt="QR-код"
+                className="w-64 h-64 border-2 rounded-lg"
+              />
+            )}
+            <Button
+              onClick={generateShelfLabel}
+              className="w-full"
+              variant="outline"
+            >
+              <IconDownload className="h-4 w-4 mr-2" />
+              Сгенерировать стеллажную бирку
+            </Button>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-function WarehouseBalanceSkeleton() {
+function WarehouseInventorySkeleton() {
   return (
-    <div className="flex flex-col gap-4 md:gap-6">
-      <div className="*:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card dark:*:data-[slot=card]:bg-card grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:shadow-xs lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
-        {[1, 2, 3, 4].map((i) => (
-          <Card key={i} className="@container/card">
-            <CardHeader>
-              <Skeleton className="h-4 w-24" />
-              <Skeleton className="h-8 w-20" />
-            </CardHeader>
-            <CardFooter className="flex-col items-start gap-1.5">
-              <Skeleton className="h-4 w-40" />
-              <Skeleton className="h-4 w-28" />
-            </CardFooter>
-          </Card>
-        ))}
-      </div>
-      <div className="px-4 lg:px-6">
-        <Skeleton className="mb-4 h-9 w-64 rounded-lg" />
-        <Skeleton className="h-64 w-full rounded-lg" />
-      </div>
+    <div className="px-4 lg:px-6">
+      <Skeleton className="mb-4 h-9 w-80 rounded-lg" />
+      <Skeleton className="h-96 w-full rounded-lg" />
     </div>
   )
 }

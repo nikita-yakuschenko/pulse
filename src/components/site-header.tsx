@@ -50,7 +50,7 @@ const SECTIONS = {
   procurement: { label: "Закупки и снабжение", href: "/purchases/dashboard" },
   production: { label: "Производство", href: "/dashboard/plan" },
   construction: { label: "Строительная часть", href: "/construction/schedule" },
-  warehouse: { label: "Склад", href: "/dashboard/warehouse/balance" },
+  warehouse: { label: "Склад", href: "/warehouse/inventory" },
 } as const
 
 // Подразделы «Закупки и снабжение»
@@ -62,8 +62,8 @@ const PROCUREMENT_SUBSECTIONS: Record<string, { label: string; href: string }> =
 
 // Подразделы «Склад»
 const WAREHOUSE_SUBSECTIONS: Record<string, { label: string; href: string }> = {
-  balance: { label: "Складские остатки", href: "/dashboard/warehouse/balance" },
-  material: { label: "Номенклатура", href: "/dashboard/warehouse/materials" },
+  inventory: { label: "Номенклатура и остатки", href: "/warehouse/inventory" },
+  movements: { label: "Движение материалов", href: "/warehouse/movements" },
 }
 
 function getBreadcrumbs(pathname: string): { href: string; label: string; isLast: boolean }[] {
@@ -77,11 +77,10 @@ function getBreadcrumbs(pathname: string): { href: string; label: string; isLast
     section = SECTIONS.construction
     if (segments[1] === "schedule") items.push({ href: "/construction/schedule", label: "График монтажа" })
     else if (segments[1] === "objects") items.push({ href: "/construction/objects", label: "Объекты" })
-  } else if (pathname.startsWith("/dashboard/warehouse")) {
+  } else if (pathname.startsWith("/warehouse")) {
     section = SECTIONS.warehouse
-    const sub = WAREHOUSE_SUBSECTIONS[segments[2]]
+    const sub = WAREHOUSE_SUBSECTIONS[segments[1]]
     if (sub) items.push({ href: sub.href, label: sub.label })
-    else items.push({ href: pathname, label: pathToLabel[segments[2]] ?? segments[2] ?? "Склад" })
   } else if (pathname.startsWith("/dashboard/production") || pathname === "/dashboard/plan") {
     section = SECTIONS.production
     if (pathname === "/dashboard/plan") items.push({ href: "/dashboard/plan", label: "График производства" })

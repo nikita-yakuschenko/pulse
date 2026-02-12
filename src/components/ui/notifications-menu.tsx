@@ -30,7 +30,7 @@ function NotificationItem({ item }: NotificationItemProps) {
   return (
     <div className="w-full py-4 first:pt-0 last:pb-0">
       <Link
-        href="/dashboard/warehouse/balance?tab=reorder"
+        href="/warehouse/inventory?tab=reorder"
         className="flex gap-3 rounded-lg transition-colors hover:bg-muted/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring -m-2 p-2"
       >
         <div className="flex size-11 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive">
@@ -147,7 +147,7 @@ export function NotificationsMenu({ reorderAlerts, onRefresh }: NotificationsMen
                 Здесь появятся алерты по точкам заказа и другим разделам
               </p>
               <Button variant="outline" size="sm" asChild>
-                <Link href="/dashboard/warehouse/balance?tab=reorder">
+                <Link href="/warehouse/inventory?tab=reorder">
                   Перейти к точкам заказа
                 </Link>
               </Button>
