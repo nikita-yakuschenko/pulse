@@ -705,7 +705,7 @@ export function PaymentsTable() {
         <Table>
           <TableHeader className="bg-muted">
             <TableRow>
-              <TableHead className="w-[140px]">Дата</TableHead>
+              <TableHead className="w-[90px]">Дата</TableHead>
               <TableHead className="w-[120px]">Номер</TableHead>
               <TableHead>Контрагент</TableHead>
               <TableHead>Организация</TableHead>

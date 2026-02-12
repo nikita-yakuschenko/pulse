@@ -136,7 +136,7 @@ export default function AnalyticsPage() {
                   <TableHead>Статус</TableHead>
                   <TableHead>Спецификаций</TableHead>
                   <TableHead>Позиций в расчёте</TableHead>
-                  <TableHead>Дата</TableHead>
+                  <TableHead className="w-[90px]">Дата</TableHead>
                   <TableHead className="w-[120px]">Действия</TableHead>
                 </TableRow>
               </TableHeader>
