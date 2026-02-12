@@ -267,7 +267,7 @@ export function MaterialNomenclatureView() {
   /** Генерация QR-кода для запроса остатков материала */
   const generateQRCode = React.useCallback(async (materialCode: string) => {
     try {
-      const url = `${window.location.origin}/dashboard/warehouse/balance?search=${encodeURIComponent(materialCode)}`
+      const url = `${window.location.origin}/m/${encodeURIComponent(materialCode)}`
       const dataUrl = await QRCode.toDataURL(url, {
         width: 300,
         margin: 2,
