@@ -45,5 +45,7 @@ db-push-with-tunnel.js
 README_1.md
 
 # Все .bsl и каталог docs (локально остаются, из репо убрать через git rm --cached)
-*.bsl
+
 /docs
+/bsl
+*.bsl
