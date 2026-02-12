@@ -450,6 +450,9 @@ export function WarehouseInventoryView() {
   const [excludedGroups, setExcludedGroups] = React.useState<Set<string>>(new Set())
   /** Выбранный материал для отображения в Sheet */
   const [selectedMaterial, setSelectedMaterial] = React.useState<MaterialTreeNode | null>(null)
+  /** Детальная информация по материалу со всеми складами (загружается при открытии Sheet) */
+  const [selectedMaterialFull, setSelectedMaterialFull] = React.useState<MaterialTreeNode | null>(null)
+  const [selectedMaterialLoading, setSelectedMaterialLoading] = React.useState(false)
   /** QR-код для текущего материала */
   const [qrCodeDataUrl, setQrCodeDataUrl] = React.useState<string>("")
   const [qrCodeOpen, setQrCodeOpen] = React.useState(false)
@@ -616,12 +619,33 @@ export function WarehouseInventoryView() {
     }
   }, [selectedMaterial])
 
-  /** Очистка QR-кода при закрытии Sheet */
+  /** Загрузка полной информации о материале при открытии Sheet */
   React.useEffect(() => {
     if (!selectedMaterial) {
       setQrCodeDataUrl("")
       setQrCodeOpen(false)
+      setSelectedMaterialFull(null)
+      return
     }
+
+    // Загружаем полную информацию по всем складам
+    setSelectedMaterialLoading(true)
+    fetch("/api/1c/warehouse/balances-full")
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.error) throw new Error(json.error)
+        const raw = Array.isArray(json.data) ? json.data : []
+        // Ищем наш материал в полном дереве
+        const fullMaterial = findNodeByCode(raw, selectedMaterial.Код)
+        setSelectedMaterialFull(fullMaterial || selectedMaterial)
+      })
+      .catch((e) => {
+        console.error("Ошибка загрузки полных остатков:", e)
+        setSelectedMaterialFull(selectedMaterial) // fallback на базовые данные
+      })
+      .finally(() => {
+        setSelectedMaterialLoading(false)
+      })
   }, [selectedMaterial])
 
   // Дебаунс: фильтрация запускается не раньше чем через 500 мс после последнего символа
@@ -2185,27 +2209,35 @@ export function WarehouseInventoryView() {
                   </Card>
 
                   {/* Остатки по складам */}
-                  {selectedMaterial.Остатки && selectedMaterial.Остатки.length > 0 && (
+                  {selectedMaterialLoading ? (
+                    <Card className="py-4">
+                      <CardContent className="pt-0 px-6 pb-0">
+                        <div className="flex items-center justify-center py-8">
+                          <IconLoader className="h-6 w-6 animate-spin text-muted-foreground" />
+                        </div>
+                      </CardContent>
+                    </Card>
+                  ) : selectedMaterialFull && selectedMaterialFull.Остатки && selectedMaterialFull.Остатки.length > 0 ? (
                     <Card className="overflow-hidden gap-1.5 py-4">
                       <CardHeader className="py-0 px-6">
                         <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
                           Остатки по складам
                           <span className="ml-2 font-normal normal-case text-foreground">
-                            {selectedMaterial.Остатки.length}
+                            {selectedMaterialFull.Остатки.length}
                           </span>
                         </p>
                         <Separator className="my-3" />
                       </CardHeader>
                       <CardContent className="pt-0 px-6 pb-0">
                         <div className="rounded-lg border divide-y bg-muted/20">
-                          {selectedMaterial.Остатки.map((balance, idx) => (
+                          {selectedMaterialFull.Остатки.map((balance, idx) => (
                             <div key={idx} className="flex items-center justify-between px-4 py-3">
                               <div className="flex flex-col gap-0.5">
                                 <p className="text-sm font-medium">{balance.Склад}</p>
                               </div>
                               <div className="text-right">
                                 <p className="text-sm font-semibold tabular-nums">
-                                  {formatMaterialQty(balance.Количество)} {formatUnit(selectedMaterial.ЕдиницаИзмерения)}
+                                  {formatMaterialQty(balance.Количество)} {formatUnit(selectedMaterialFull.ЕдиницаИзмерения)}
                                 </p>
                               </div>
                             </div>
@@ -2213,7 +2245,7 @@ export function WarehouseInventoryView() {
                         </div>
                       </CardContent>
                     </Card>
-                  )}
+                  ) : null}
                 </div>
               </div>
             </>
