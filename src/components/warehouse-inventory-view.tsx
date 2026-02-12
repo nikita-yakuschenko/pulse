@@ -1335,11 +1335,11 @@ export function WarehouseInventoryView() {
                 ) : (
                   <Table className="table-fixed">
                     <colgroup>
-                      <col style={{ width: 150 }} />
-                      <col />
-                      <col style={{ width: 200 }} />
-                      <col style={{ width: 120 }} />
-                      <col style={{ width: 80 }} />
+                      <col style={{ width: "9%" }} />
+                      <col style={{ width: "26%" }} />
+                      <col style={{ width: "34%" }} />
+                      <col style={{ width: "18%" }} />
+                      <col style={{ width: "9%" }} />
                     </colgroup>
                     <TableHeader className="bg-muted/50">
                       <TableRow>
@@ -1443,11 +1443,11 @@ export function WarehouseInventoryView() {
                     </TableHeader>
                     <TableHeader className="bg-muted">
                       <TableRow>
-                        <TableHead className="w-[150px]">Код</TableHead>
-                        <TableHead className="w-[350px]">Номенклатура</TableHead>
-                        <TableHead className="w-[300px]">Склад</TableHead>
-                        <TableHead className="w-[120px] text-right">Количество</TableHead>
-                        <TableHead className="w-20">Ед. изм.</TableHead>
+                        <TableHead className="min-w-0">Код</TableHead>
+                        <TableHead className="min-w-0">Номенклатура</TableHead>
+                        <TableHead className="min-w-0">Склад</TableHead>
+                        <TableHead className="min-w-0 text-right">Количество</TableHead>
+                        <TableHead className="min-w-0 whitespace-nowrap">Ед. изм.</TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
@@ -1478,7 +1478,7 @@ export function WarehouseInventoryView() {
                                 onClick={() => idx === 0 && setSelectedMaterial(node)}
                               >
                                 {/* Код показываем только в первой строке */}
-                                <TableCell className="align-middle py-1 w-[150px] min-w-[150px] max-w-[150px]">
+                                <TableCell className="align-middle py-1 min-w-0">
                                   {idx === 0 && node.Код ? (
                                     <button
                                       type="button"
@@ -1498,9 +1498,9 @@ export function WarehouseInventoryView() {
                                   ) : null}
                                 </TableCell>
                                 {/* Наименование показываем только в первой строке */}
-                                <TableCell className="align-middle py-1 w-[350px] max-w-[350px]">
+                                <TableCell className="align-middle py-1 min-w-0 max-w-0">
                                   {idx === 0 && (
-                                    <div className="flex items-center gap-1.5 min-h-8 min-w-0">
+                                    <div className="flex items-center gap-1.5 min-h-8 min-w-0 truncate">
                                       {(() => {
                                         const code = node.Код ?? ""
                                         const isFavorite = materialPrefs[code]?.favorite ?? false
@@ -1557,15 +1557,15 @@ export function WarehouseInventoryView() {
                                   )}
                                 </TableCell>
                                 {/* Склад */}
-                                <TableCell className="align-middle py-1 w-[300px]">
+                                <TableCell className="align-middle py-1 min-w-0 truncate" title={balRow.Склад || undefined}>
                                   {balRow.Склад || "—"}
                                 </TableCell>
                                 {/* Количество на этом складе */}
-                                <TableCell className="align-middle py-1 text-right tabular-nums">
+                                <TableCell className="align-middle py-1 text-right tabular-nums whitespace-nowrap">
                                   {formatMaterialQty(balRow.Количество)}
                                 </TableCell>
                                 {/* Единица измерения */}
-                                <TableCell className="align-middle py-1 text-muted-foreground">
+                                <TableCell className="align-middle py-1 text-muted-foreground whitespace-nowrap">
                                   {formatUnit(balRow.ЕдиницаИзмерения)}
                                 </TableCell>
                               </TableRow>
@@ -1583,7 +1583,7 @@ export function WarehouseInventoryView() {
                               )}
                               onClick={() => !isGroup && setSelectedMaterial(node)}
                             >
-                              <TableCell className="align-middle py-1 w-[150px] min-w-[150px] max-w-[150px]">
+                              <TableCell className="align-middle py-1 min-w-0">
                                 {!isGroup && node.Код ? (
                                   <button
                                     type="button"
@@ -1602,8 +1602,8 @@ export function WarehouseInventoryView() {
                                   </button>
                                 ) : null}
                               </TableCell>
-                              <TableCell className="align-middle py-1 w-[350px] max-w-[350px]">
-                                <div className="flex items-center gap-1.5 min-h-8 min-w-0">
+<TableCell className="align-middle py-1 min-w-0 max-w-0">
+                                    <div className="flex items-center gap-1.5 min-h-8 min-w-0 truncate">
                                   {isGroup ? (
                                     <>
                                       {(() => {
@@ -1729,13 +1729,13 @@ export function WarehouseInventoryView() {
                               </div>
                             </TableCell>
                             {/* Склад */}
-                            <TableCell className="align-middle py-1 w-[300px]">
+                            <TableCell className="align-middle py-1 min-w-0 truncate" title={bestBalance?.warehouse}>
                               {bestBalance ? bestBalance.warehouse : "—"}
                             </TableCell>
-                            <TableCell className="align-middle py-1 text-right tabular-nums">
+                            <TableCell className="align-middle py-1 text-right tabular-nums whitespace-nowrap">
                               {bestBalance ? formatMaterialQty(bestBalance.quantity) : null}
                             </TableCell>
-                            <TableCell className="align-middle py-1 text-muted-foreground">
+                            <TableCell className="align-middle py-1 text-muted-foreground whitespace-nowrap">
                               {!isGroup ? formatUnit(node.ЕдиницаИзмерения) : null}
                             </TableCell>
                             </TableRow>
