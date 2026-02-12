@@ -5,6 +5,48 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Единая палитра KPI: 0 = красный, 0.5 = жёлтый, 1 = зелёный.
+ * Один и тот же цвет для контура, текста и прогресс-бара.
+ */
+const KPI_PALETTE = {
+  red: [200, 40, 40] as const,
+  yellow: [200, 140, 20] as const,
+  green: [30, 140, 70] as const,
+} as const
+
+function interpolateKpiColor(c: number): string {
+  const [r1, g1, b1] = KPI_PALETTE.red
+  const [r2, g2, b2] = KPI_PALETTE.yellow
+  const [r3, g3, b3] = KPI_PALETTE.green
+  let r: number
+  let g: number
+  let b: number
+  if (c <= 0.5) {
+    const t = c * 2
+    r = Math.round(r1 + (r2 - r1) * t)
+    g = Math.round(g1 + (g2 - g1) * t)
+    b = Math.round(b1 + (b2 - b1) * t)
+  } else {
+    const t = (c - 0.5) * 2
+    r = Math.round(r2 + (r3 - r2) * t)
+    g = Math.round(g2 + (g3 - g2) * t)
+    b = Math.round(b2 + (b3 - b2) * t)
+  }
+  return `rgb(${r}, ${g}, ${b})`
+}
+
+/** Цвет по коэффициенту KPI — один стандарт для контура, текста и прогресс-бара */
+export function getKpiBorderColor(coefficient: number): string {
+  const c = Math.max(0, Math.min(1, coefficient))
+  return interpolateKpiColor(c)
+}
+
+/** Тот же цвет, что и контур/текст (единая палитра) */
+export function getKpiProgressColor(coefficient: number): string {
+  return getKpiBorderColor(coefficient)
+}
+
 /** Квадратные метры: символ U+00B2 (²). Кубические метры: U+00B3 (³) */
 const SQUARE_METER = "м\u00B2"
 const CUBIC_METER = "м\u00B3"
