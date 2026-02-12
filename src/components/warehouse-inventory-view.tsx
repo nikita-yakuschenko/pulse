@@ -1443,9 +1443,9 @@ export function WarehouseInventoryView() {
                     </TableHeader>
                     <TableHeader className="bg-muted">
                       <TableRow>
-                        <TableHead className="w-[150px] min-w-[150px] max-w-[150px]">Код</TableHead>
-                        <TableHead className="min-w-[280px]">Номенклатура</TableHead>
-                        <TableHead className="min-w-[200px]">Склад</TableHead>
+                        <TableHead className="w-[150px]">Код</TableHead>
+                        <TableHead className="w-[350px]">Номенклатура</TableHead>
+                        <TableHead className="w-[300px]">Склад</TableHead>
                         <TableHead className="w-[120px] text-right">Количество</TableHead>
                         <TableHead className="w-20">Ед. изм.</TableHead>
                       </TableRow>
@@ -1498,9 +1498,9 @@ export function WarehouseInventoryView() {
                                   ) : null}
                                 </TableCell>
                                 {/* Наименование показываем только в первой строке */}
-                                <TableCell className="align-middle py-1">
+                                <TableCell className="align-middle py-1 w-[350px] max-w-[350px]">
                                   {idx === 0 && (
-                                    <div className="flex items-center gap-1.5 min-h-8">
+                                    <div className="flex items-center gap-1.5 min-h-8 min-w-0">
                                       {(() => {
                                         const code = node.Код ?? ""
                                         const isFavorite = materialPrefs[code]?.favorite ?? false
@@ -1552,12 +1552,12 @@ export function WarehouseInventoryView() {
                                           </>
                                         )
                                       })()}
-                                      <span className="truncate font-medium">{node.Наименование}</span>
+                                      <span className="truncate font-medium" title={node.Наименование}>{node.Наименование}</span>
                                     </div>
                                   )}
                                 </TableCell>
                                 {/* Склад */}
-                                <TableCell className="align-middle py-1">
+                                <TableCell className="align-middle py-1 w-[300px]">
                                   {balRow.Склад || "—"}
                                 </TableCell>
                                 {/* Количество на этом складе */}
@@ -1602,8 +1602,8 @@ export function WarehouseInventoryView() {
                                   </button>
                                 ) : null}
                               </TableCell>
-                              <TableCell className="align-middle py-1">
-                                <div className="flex items-center gap-1.5 min-h-8">
+                              <TableCell className="align-middle py-1 w-[350px] max-w-[350px]">
+                                <div className="flex items-center gap-1.5 min-h-8 min-w-0">
                                   {isGroup ? (
                                     <>
                                       {(() => {
@@ -1723,13 +1723,13 @@ export function WarehouseInventoryView() {
                                           </>
                                         )
                                       })()}
-                                      <span className="truncate font-medium">{node.Наименование}</span>
+                                      <span className="truncate font-medium" title={node.Наименование}>{node.Наименование}</span>
                                     </>
                                   )}
                               </div>
                             </TableCell>
                             {/* Склад */}
-                            <TableCell className="align-middle py-1">
+                            <TableCell className="align-middle py-1 w-[300px]">
                               {bestBalance ? bestBalance.warehouse : "—"}
                             </TableCell>
                             <TableCell className="align-middle py-1 text-right tabular-nums">
