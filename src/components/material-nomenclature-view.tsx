@@ -17,9 +17,11 @@ import {
   IconSearch,
   IconStar,
   IconX,
+  IconDownload,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
 import QRCode from "qrcode"
+import jsPDF from "jspdf"
 import type { MaterialTreeNode } from "@/types/1c"
 import { cn, formatMaterialQty } from "@/lib/utils"
 import {
@@ -283,6 +285,119 @@ export function MaterialNomenclatureView() {
       console.error(error)
     }
   }, [])
+
+  /** Генерация PDF стеллажной бирки */
+  const generateShelfLabel = React.useCallback(async () => {
+    if (!selectedMaterial) return
+
+    try {
+      // Генерируем QR-код
+      const url = `${window.location.origin}/m/${encodeURIComponent(selectedMaterial.Код)}`
+      const qrDataUrl = await QRCode.toDataURL(url, {
+        width: 600,
+        margin: 2,
+        color: {
+          dark: "#000000",
+          light: "#ffffff",
+        },
+      })
+
+      // Создаём canvas для рисования бирки (100x60мм при 96 DPI ≈ 378x227px)
+      const canvas = document.createElement("canvas")
+      const dpi = 300 // Высокое качество для печати
+      const mmToPx = dpi / 25.4
+      const width = 100 * mmToPx // 100мм
+      const height = 60 * mmToPx // 60мм
+      
+      canvas.width = width
+      canvas.height = height
+      const ctx = canvas.getContext("2d")
+      
+      if (!ctx) throw new Error("Canvas context not available")
+
+      // Белый фон
+      ctx.fillStyle = "#ffffff"
+      ctx.fillRect(0, 0, width, height)
+
+      // Рамка
+      ctx.strokeStyle = "#000000"
+      ctx.lineWidth = 2
+      ctx.strokeRect(10, 10, width - 20, height - 20)
+
+      // Загружаем QR-код
+      const qrImg = new Image()
+      await new Promise((resolve, reject) => {
+        qrImg.onload = resolve
+        qrImg.onerror = reject
+        qrImg.src = qrDataUrl
+      })
+
+      // Рисуем QR-код (левая часть, 50x50мм)
+      const qrSize = 50 * mmToPx
+      const qrPadding = 20
+      ctx.drawImage(qrImg, qrPadding, (height - qrSize) / 2, qrSize, qrSize)
+
+      // Правая часть - текст
+      const textX = qrPadding + qrSize + 40
+      let textY = 70
+
+      // КОД
+      ctx.fillStyle = "#000000"
+      ctx.font = `bold ${24}px Arial, sans-serif`
+      ctx.fillText("КОД:", textX, textY)
+      
+      textY += 38
+      ctx.font = `${28}px "Courier New", monospace`
+      ctx.fillText(selectedMaterial.Код, textX, textY)
+
+      // МАТЕРИАЛ
+      textY += 50
+      ctx.font = `bold ${22}px Arial, sans-serif`
+      ctx.fillText("МАТЕРИАЛ:", textX, textY)
+
+      // Название материала с переносом строк
+      textY += 42
+      ctx.font = `bold ${28}px Arial, sans-serif`
+      const maxWidth = width - textX - 40
+      const words = selectedMaterial.Наименование.split(" ")
+      let line = ""
+      const lineHeight = 34
+
+      for (const word of words) {
+        const testLine = line + (line ? " " : "") + word
+        const metrics = ctx.measureText(testLine)
+        
+        if (metrics.width > maxWidth && line) {
+          ctx.fillText(line, textX, textY)
+          line = word
+          textY += lineHeight
+        } else {
+          line = testLine
+        }
+      }
+      if (line) {
+        ctx.fillText(line, textX, textY)
+      }
+
+      // Конвертируем canvas в PDF
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: [100, 60],
+      })
+
+      const imgData = canvas.toDataURL("image/png")
+      pdf.addImage(imgData, "PNG", 0, 0, 100, 60)
+      
+      // Сохраняем PDF
+      pdf.save(`Бирка_${selectedMaterial.Код}.pdf`)
+      toast.success("Стеллажная бирка сгенерирована")
+      setQrCodeOpen(false)
+    } catch (error) {
+      toast.error("Не удалось сгенерировать бирку")
+      console.error(error)
+    }
+  }, [selectedMaterial])
 
   /** Очистка QR-кода при закрытии Sheet */
   React.useEffect(() => {
@@ -926,15 +1041,10 @@ export function MaterialNomenclatureView() {
               <Button
                 variant="outline"
                 className="flex-1"
-                onClick={() => {
-                  const link = document.createElement("a")
-                  link.download = `qr-${selectedMaterial?.Код || "material"}.png`
-                  link.href = qrCodeDataUrl
-                  link.click()
-                }}
+                onClick={generateShelfLabel}
               >
-                <IconCopy className="h-4 w-4 mr-2" />
-                Скачать
+                <IconDownload className="h-4 w-4 mr-2" />
+                Сгенерировать стеллажную бирку
               </Button>
               <Button
                 variant="default"
