@@ -378,6 +378,15 @@ export function WarehouseBalanceView() {
     const tab = searchParams.get("tab")
     if (tab === "reorder") setActiveTab("reorder")
   }, [searchParams, setActiveTab])
+
+  // При переходе по ссылке с ?search=код — автоматически заполнить поиск
+  React.useEffect(() => {
+    const searchQuery = searchParams.get("search")
+    if (searchQuery && searchQuery.trim()) {
+      setMaterialSearchQuery(searchQuery.trim())
+      setActiveTab("available")
+    }
+  }, [searchParams, setActiveTab])
   const [reorderPoints, setReorderPoints] = React.useState<ReorderPoint[]>([])
   const [reorderLoading, setReorderLoading] = React.useState(false)
   const [reorderError, setReorderError] = React.useState<string | null>(null)
@@ -1105,6 +1114,7 @@ export function WarehouseBalanceView() {
                   <colgroup>
                     <col style={{ width: 150 }} />
                     <col />
+                    <col style={{ width: 200 }} />
                     <col style={{ width: 120 }} />
                     <col style={{ width: 80 }} />
                   </colgroup>
@@ -1212,6 +1222,7 @@ export function WarehouseBalanceView() {
                   <TableRow>
                       <TableHead className="w-[150px] min-w-[150px] max-w-[150px]">Код</TableHead>
                       <TableHead className="min-w-[280px]">Номенклатура</TableHead>
+                      <TableHead className="min-w-[200px]">Склад</TableHead>
                       <TableHead className="w-[120px] text-right">Количество</TableHead>
                     <TableHead className="w-20">Ед. изм.</TableHead>
                   </TableRow>
@@ -1230,11 +1241,112 @@ export function WarehouseBalanceView() {
                       </TableCell>
                     </TableRow>
                   ) : (
-                      displayLevel.map((node) => {
+                      displayLevel.flatMap((node) => {
                         const isGroup = node.ЭтоГруппа
                         const balanceRows = !isGroup ? balances.filter((b) => b.Код === node.Код) : []
                         const totalQty = balanceRows.reduce((s, r) => s + r.Количество, 0)
 
+                        // При поиске конкретного материала показываем остатки по каждому складу
+                        if (!isGroup && searchResults !== null && balanceRows.length > 0) {
+                          return balanceRows.map((balRow, idx) => (
+                            <TableRow
+                              key={`m-${node.Код}-${balRow.Склад || idx}`}
+                            >
+                              {/* Код показываем только в первой строке */}
+                              <TableCell className="align-middle py-1 w-[150px] min-w-[150px] max-w-[150px]">
+                                {idx === 0 && node.Код ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      navigator.clipboard.writeText(node.Код)
+                                      toast.success(`Код ${node.Код} скопирован`)
+                                    }}
+                                    className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group text-sm"
+                                    title="Копировать код"
+                                  >
+                                    <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}>
+                                      {node.Код}
+                                    </span>
+                                    <IconCopy className="h-3.5 w-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity shrink-0" />
+                                  </button>
+                                ) : null}
+                              </TableCell>
+                              {/* Наименование показываем только в первой строке */}
+                              <TableCell className="align-middle py-1">
+                                {idx === 0 && (
+                                  <div className="flex items-center gap-1.5 min-h-8">
+                                    {(() => {
+                                      const code = node.Код ?? ""
+                                      const isFavorite = materialPrefs[code]?.favorite ?? false
+                                      const hasReorderPoint = reorderPoints.some((rp) =>
+                                        rp.itemCode === code || (rp.isGroup && Array.isArray(rp.itemCodes) && rp.itemCodes.includes(code))
+                                      )
+                                      return (
+                                        <>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              setMaterialPref(code, { favorite: !isFavorite })
+                                            }}
+                                            className={cn(
+                                              "shrink-0 rounded p-1 transition-colors",
+                                              isFavorite
+                                                ? "text-amber-500 hover:text-amber-600"
+                                                : "text-muted-foreground hover:text-foreground"
+                                            )}
+                                            title={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
+                                            aria-label={isFavorite ? "Убрать из избранного" : "Добавить в избранное"}
+                                          >
+                                            <IconStar
+                                              className={cn("h-4 w-4", isFavorite && "fill-current")}
+                                              aria-hidden
+                                            />
+                                          </button>
+                                          <button
+                                            type="button"
+                                            onClick={(e) => {
+                                              e.stopPropagation()
+                                              handleOpenDialogForMaterial(code)
+                                            }}
+                                            className={cn(
+                                              "shrink-0 rounded p-1 transition-colors",
+                                              hasReorderPoint
+                                                ? "text-blue-500 hover:text-blue-600"
+                                                : "text-muted-foreground hover:text-foreground"
+                                            )}
+                                            title={hasReorderPoint ? "Точка заказа установлена — изменить" : "Установить точку заказа"}
+                                            aria-label={hasReorderPoint ? "Изменить точку заказа" : "Установить точку заказа"}
+                                          >
+                                            <IconBookmark
+                                              className={cn("h-4 w-4", hasReorderPoint && "fill-current")}
+                                              aria-hidden
+                                            />
+                                          </button>
+                                        </>
+                                      )
+                                    })()}
+                                    <span className="truncate font-medium">{node.Наименование}</span>
+                                  </div>
+                                )}
+                              </TableCell>
+                              {/* Склад */}
+                              <TableCell className="align-middle py-1">
+                                {balRow.Склад || "—"}
+                              </TableCell>
+                              {/* Количество на этом складе */}
+                              <TableCell className="align-middle py-1 text-right tabular-nums">
+                                {formatMaterialQty(balRow.Количество)}
+                              </TableCell>
+                              {/* Единица измерения */}
+                              <TableCell className="align-middle py-1 text-muted-foreground">
+                                {formatUnit(balRow.ЕдиницаИзмерения)}
+                              </TableCell>
+                            </TableRow>
+                          ))
+                        }
+
+                        // В обычном режиме (без поиска) показываем суммарный остаток
                         return (
                           <TableRow
                             key={isGroup ? `g-${node.Код}` : `m-${node.Код}`}
@@ -1380,6 +1492,10 @@ export function WarehouseBalanceView() {
                                   </>
                                 )}
                   </div>
+                            </TableCell>
+                            {/* Склад (в обычном режиме пусто) */}
+                            <TableCell className="align-middle py-1">
+                              —
                             </TableCell>
                             <TableCell className="align-middle py-1 text-right tabular-nums">
                               {!isGroup ? formatMaterialQty(totalQty) : null}
