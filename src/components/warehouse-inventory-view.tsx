@@ -361,8 +361,10 @@ const GroupTreeNode = React.memo(function GroupTreeNode({
 const MATERIALS_GROUP_CODE = "00000007716"
 
 export function WarehouseInventoryView() {
-  /** Дерево с остатками (ответ balances/get/list) — иерархия + Остатки по складам на листьях */
+  /** Дерево с остатками (ответ balances/get/list) — иерархия + Остатки только по основному складу */
   const [balancesTree, setBalancesTree] = React.useState<MaterialTreeNode[] | null>(null)
+  /** Дерево с остатками по ВСЕМ складам (для проверки наличия при фильтре нулевых) */
+  const [balancesTreeFull, setBalancesTreeFull] = React.useState<MaterialTreeNode[] | null>(null)
   const [page, setPage] = React.useState(1)
   const {
     pageSize,
@@ -452,7 +454,6 @@ export function WarehouseInventoryView() {
   const [selectedMaterial, setSelectedMaterial] = React.useState<MaterialTreeNode | null>(null)
   /** Детальная информация по материалу со всеми складами (загружается при открытии Sheet) */
   const [selectedMaterialFull, setSelectedMaterialFull] = React.useState<MaterialTreeNode | null>(null)
-  const [selectedMaterialLoading, setSelectedMaterialLoading] = React.useState(false)
   /** QR-код для текущего материала */
   const [qrCodeDataUrl, setQrCodeDataUrl] = React.useState<string>("")
   const [qrCodeOpen, setQrCodeOpen] = React.useState(false)
@@ -628,25 +629,14 @@ export function WarehouseInventoryView() {
       return
     }
 
-    // Загружаем полную информацию по всем складам
-    setSelectedMaterialLoading(true)
-    fetch("/api/1c/warehouse/balances-full")
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.error) throw new Error(json.error)
-        const raw = Array.isArray(json.data) ? json.data : []
-        // Ищем наш материал в полном дереве
-        const fullMaterial = findNodeByCode(raw, selectedMaterial.Код)
-        setSelectedMaterialFull(fullMaterial || selectedMaterial)
-      })
-      .catch((e) => {
-        console.error("Ошибка загрузки полных остатков:", e)
-        setSelectedMaterialFull(selectedMaterial) // fallback на базовые данные
-      })
-      .finally(() => {
-        setSelectedMaterialLoading(false)
-      })
-  }, [selectedMaterial])
+    // Используем уже загруженный balancesTreeFull (с данными по всем складам)
+    if (balancesTreeFull) {
+      const fullMaterial = findNodeByCode(balancesTreeFull, selectedMaterial.Код)
+      setSelectedMaterialFull(fullMaterial || selectedMaterial)
+    } else {
+      setSelectedMaterialFull(selectedMaterial) // fallback на базовые данные
+    }
+  }, [selectedMaterial, balancesTreeFull])
 
   // Дебаунс: фильтрация запускается не раньше чем через 500 мс после последнего символа
   // Минимум 3 символа для начала поиска
@@ -735,14 +725,52 @@ export function WarehouseInventoryView() {
     })
   }, [currentLevel, showHiddenGroups, groupPrefs])
 
+  /** Проверить, есть ли остаток на любом складе (используем balancesTreeFull) */
+  const hasAnyBalance = React.useCallback((materialCode: string): boolean => {
+    if (!balancesTreeFull) return false
+    const fullNode = findNodeByCode(balancesTreeFull, materialCode)
+    if (!fullNode || fullNode.ЭтоГруппа) return false
+    const totalQty = (fullNode.Остатки ?? []).reduce((s, r) => s + r.Количество, 0)
+    return totalQty > 0
+  }, [balancesTreeFull])
+
+  /** 
+   * Получить "лучший" остаток для материала:
+   * 1. Приоритет - основной склад (из balancesTree)
+   * 2. Если там 0 - ищем первый ненулевой на других складах (из balancesTreeFull)
+   * Возвращает { warehouse: string, quantity: number } или null
+   */
+  const getBestBalance = React.useCallback((materialCode: string): { warehouse: string; quantity: number } | null => {
+    // Сначала смотрим на основной склад
+    const mainNode = balancesTree ? findNodeByCode(balancesTree, materialCode) : null
+    if (mainNode && !mainNode.ЭтоГруппа && mainNode.Остатки && mainNode.Остатки.length > 0) {
+      const mainQty = mainNode.Остатки[0].Количество
+      const mainWarehouse = mainNode.Остатки[0].Склад
+      if (mainQty > 0) {
+        return { warehouse: mainWarehouse, quantity: mainQty }
+      }
+    }
+
+    // Если на основном складе 0 (или нет данных) - ищем первый ненулевой на других складах
+    if (!balancesTreeFull) return null
+    const fullNode = findNodeByCode(balancesTreeFull, materialCode)
+    if (!fullNode || fullNode.ЭтоГруппа || !fullNode.Остатки) return null
+    
+    const firstNonZero = fullNode.Остатки.find(b => b.Количество > 0)
+    if (firstNonZero) {
+      return { warehouse: firstNonZero.Склад, quantity: firstNonZero.Количество }
+    }
+
+    return null
+  }, [balancesTree, balancesTreeFull])
+
   // Итоговый список: при активном поиске — найденные материалы (с учётом showZeroBalances); иначе — обычная цепочка фильтров
   const displayLevel = React.useMemo(() => {
     if (searchResults !== null) {
       if (!showZeroBalances) {
         return searchResults.filter((node) => {
           if (node.ЭтоГруппа) return true
-          const totalQty = balances.filter((b) => b.Код === node.Код).reduce((s, r) => s + r.Количество, 0)
-          return totalQty > 0
+          return hasAnyBalance(node.Код ?? "")
         })
       }
       return searchResults
@@ -751,8 +779,7 @@ export function WarehouseInventoryView() {
       ? levelAfterHidden
       : levelAfterHidden.filter((node) => {
           if (node.ЭтоГруппа) return true
-          const totalQty = balances.filter((b) => b.Код === node.Код).reduce((s, r) => s + r.Количество, 0)
-          return totalQty > 0
+          return hasAnyBalance(node.Код ?? "")
         })
     return [...list].sort((a, b) => {
       const aGroup = a.ЭтоГруппа ? 1 : 0
@@ -764,7 +791,7 @@ export function WarehouseInventoryView() {
       if (aFav !== bFav) return bFav - aFav
       return (a.Наименование ?? "").localeCompare(b.Наименование ?? "", "ru")
     })
-  }, [searchResults, levelAfterHidden, showZeroBalances, balances, groupPrefs, materialPrefs])
+  }, [searchResults, levelAfterHidden, showZeroBalances, hasAnyBalance, groupPrefs, materialPrefs])
 
   const drillInto = React.useCallback((node: MaterialTreeNode) => {
     setDrillPath((prev) => [...prev, node])
@@ -1036,17 +1063,28 @@ export function WarehouseInventoryView() {
     fetchWarehouses()
   }, [fetchWarehouses])
 
-  // Загрузка данных для табов «Номенклатура и остатки» и «Точка заказа» — базовый запрос balances/get/list (полная иерархия + остатки по складам)
+  // Загрузка данных для табов «Номенклатура и остатки» и «Точка заказа»
+  // Загружаем 2 набора: основной склад (для таблицы) + все склады (для фильтра и Sheet)
   React.useEffect(() => {
     setMaterialsLoading(true)
     setMaterialsError(null)
-    fetch("/api/1c/warehouse/balances")
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.error) throw new Error(json.error)
-        const raw = Array.isArray(json.data) ? json.data : []
-        const sorted = sortMaterialsTreeByName(raw)
-        setBalancesTree(sorted)
+    
+    Promise.all([
+      fetch("/api/1c/warehouse/balances").then(r => r.json()),
+      fetch("/api/1c/warehouse/balances-full").then(r => r.json()),
+    ])
+      .then(([jsonMain, jsonFull]) => {
+        if (jsonMain.error) throw new Error(jsonMain.error)
+        if (jsonFull.error) throw new Error(jsonFull.error)
+        
+        const rawMain = Array.isArray(jsonMain.data) ? jsonMain.data : []
+        const rawFull = Array.isArray(jsonFull.data) ? jsonFull.data : []
+        
+        const sortedMain = sortMaterialsTreeByName(rawMain)
+        const sortedFull = sortMaterialsTreeByName(rawFull)
+        
+        setBalancesTree(sortedMain)
+        setBalancesTreeFull(sortedFull)
         setDrillPath([])
       })
       .catch((e) => {
@@ -1534,7 +1572,8 @@ export function WarehouseInventoryView() {
                             ))
                           }
 
-                          // В обычном режиме (без поиска) показываем суммарный остаток
+                          // В обычном режиме (без поиска) показываем лучший остаток (основной склад → первый ненулевой)
+                          const bestBalance = !isGroup ? getBestBalance(node.Код ?? "") : null
                           return (
                             <TableRow
                               key={isGroup ? `g-${node.Код}` : `m-${node.Код}`}
@@ -1687,18 +1726,18 @@ export function WarehouseInventoryView() {
                                       <span className="truncate font-medium">{node.Наименование}</span>
                                     </>
                                   )}
-                                </div>
-                              </TableCell>
-                              {/* Склад (в обычном режиме пусто) */}
-                              <TableCell className="align-middle py-1">
-                                —
-                              </TableCell>
-                              <TableCell className="align-middle py-1 text-right tabular-nums">
-                                {!isGroup ? formatMaterialQty(totalQty) : null}
-                              </TableCell>
-                              <TableCell className="align-middle py-1 text-muted-foreground">
-                                {!isGroup ? formatUnit(node.ЕдиницаИзмерения) : null}
-                              </TableCell>
+                              </div>
+                            </TableCell>
+                            {/* Склад */}
+                            <TableCell className="align-middle py-1">
+                              {bestBalance ? bestBalance.warehouse : "—"}
+                            </TableCell>
+                            <TableCell className="align-middle py-1 text-right tabular-nums">
+                              {bestBalance ? formatMaterialQty(bestBalance.quantity) : null}
+                            </TableCell>
+                            <TableCell className="align-middle py-1 text-muted-foreground">
+                              {!isGroup ? formatUnit(node.ЕдиницаИзмерения) : null}
+                            </TableCell>
                             </TableRow>
                           )
                         })
@@ -2209,15 +2248,7 @@ export function WarehouseInventoryView() {
                   </Card>
 
                   {/* Остатки по складам */}
-                  {selectedMaterialLoading ? (
-                    <Card className="py-4">
-                      <CardContent className="pt-0 px-6 pb-0">
-                        <div className="flex items-center justify-center py-8">
-                          <IconLoader className="h-6 w-6 animate-spin text-muted-foreground" />
-                        </div>
-                      </CardContent>
-                    </Card>
-                  ) : selectedMaterialFull && selectedMaterialFull.Остатки && selectedMaterialFull.Остатки.length > 0 ? (
+                  {selectedMaterialFull && selectedMaterialFull.Остатки && selectedMaterialFull.Остатки.length > 0 ? (
                     <Card className="overflow-hidden gap-1.5 py-4">
                       <CardHeader className="py-0 px-6">
                         <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
