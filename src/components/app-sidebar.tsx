@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
 import {
+  IconArrowsExchange,
   IconBuildingWarehouse,
   IconCalendar,
   IconListNumbers,
@@ -53,8 +54,8 @@ const ENABLED_URLS = new Set([
   "/purchases/receipts",
   "/docs/specifications",
   "/docs/projects",
-  "/dashboard/warehouse/balance",
-  "/dashboard/warehouse/materials",
+  "/warehouse/inventory",
+  "/warehouse/movements",
   "/construction/schedule",
 ])
 
@@ -100,8 +101,8 @@ const constructionItems = [
 ]
 
 const warehouseItems = [
-  { title: "Складские остатки", url: "/dashboard/warehouse/balance", icon: IconBuildingWarehouse },
-  { title: "Номенклатура", url: "/dashboard/warehouse/materials", icon: IconListNumbers },
+  { title: "Номенклатура и остатки", url: "/warehouse/inventory", icon: IconBuildingWarehouse },
+  { title: "Движение материалов", url: "/warehouse/movements", icon: IconArrowsExchange },
 ]
 
 export function AppSidebar({
