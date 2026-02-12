@@ -46,8 +46,8 @@ export default function MaterialMobileViewPage() {
       return
     }
 
-    // Загружаем полное дерево остатков
-    fetch("/api/1c/warehouse/balances")
+    // Загружаем полное дерево остатков по ВСЕМ складам
+    fetch("/api/1c/warehouse/balances-full")
       .then((r) => r.json())
       .then((json) => {
         if (json.error) throw new Error(json.error)
