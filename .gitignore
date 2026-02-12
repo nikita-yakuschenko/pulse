@@ -44,15 +44,6 @@ keep-tunnel-open.ps1
 db-push-with-tunnel.js
 README_1.md
 
-.bsl
-balances copy.bsl
-balances.bsl
-materials copy.bsl
-materials.bsl
-payments copy.bsl
-payments.bsl
-sorders copy.bsl
-sorders.bsl
-specifications.bsl
-
+# Все .bsl и каталог docs (локально остаются, из репо убрать через git rm --cached)
+*.bsl
 /docs
