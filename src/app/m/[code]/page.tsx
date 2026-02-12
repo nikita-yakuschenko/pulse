@@ -3,7 +3,8 @@
 import * as React from "react"
 import { useParams } from "next/navigation"
 import { IconBox } from "@tabler/icons-react"
-import { formatMaterialQty } from "@/lib/utils"
+import { motion, AnimatePresence } from "framer-motion"
+import { formatMaterialQty, formatUnit } from "@/lib/utils"
 import type { MaterialTreeNode } from "@/types/1c"
 import {
   Card,
@@ -12,6 +13,186 @@ import {
   CardTitle,
 } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
+
+/** SVG коробка с анимированными створками */
+function AnimatedBox({ cycle }: { cycle: number }) {
+  return (
+    <motion.svg
+      key={cycle}
+      width="48"
+      height="48"
+      viewBox="0 0 48 48"
+      className="text-primary"
+      initial={{ x: 100, opacity: 0 }}
+      animate={{
+        x: [100, 0, 0, 0, -100],
+        opacity: [0, 1, 1, 1, 0],
+      }}
+      transition={{
+        duration: 2.5,
+        times: [0, 0.2, 0.6, 0.8, 1],
+        ease: "easeInOut",
+      }}
+    >
+      {/* Основа коробки */}
+      <motion.rect
+        x="12"
+        y="12"
+        width="24"
+        height="24"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+      />
+
+      {/* Левая створка */}
+      <motion.g
+        style={{ transformOrigin: "12px 24px" }}
+        animate={{
+          rotateY: [0, -85, -85, 0],
+        }}
+        transition={{
+          duration: 2.5,
+          times: [0, 0.4, 0.6, 0.8],
+          ease: "easeInOut",
+        }}
+      >
+        <motion.path
+          d="M 12 12 L 12 36"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          animate={{
+            opacity: [1, 0.2, 0.2, 1],
+          }}
+          transition={{
+            duration: 2.5,
+            times: [0, 0.4, 0.6, 0.8],
+          }}
+        />
+      </motion.g>
+
+      {/* Правая створка */}
+      <motion.g
+        style={{ transformOrigin: "36px 24px" }}
+        animate={{
+          rotateY: [0, 85, 85, 0],
+        }}
+        transition={{
+          duration: 2.5,
+          times: [0, 0.5, 0.7, 0.9],
+          ease: "easeInOut",
+        }}
+      >
+        <motion.path
+          d="M 36 12 L 36 36"
+          stroke="currentColor"
+          strokeWidth="2.5"
+          strokeLinecap="round"
+          animate={{
+            opacity: [1, 0.2, 0.2, 1],
+          }}
+          transition={{
+            duration: 2.5,
+            times: [0, 0.5, 0.7, 0.9],
+          }}
+        />
+      </motion.g>
+
+      {/* Верхняя линия */}
+      <motion.line
+        x1="12"
+        y1="12"
+        x2="36"
+        y2="12"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+
+      {/* Нижняя линия */}
+      <motion.line
+        x1="12"
+        y1="36"
+        x2="36"
+        y2="36"
+        stroke="currentColor"
+        strokeWidth="2"
+        strokeLinecap="round"
+      />
+
+      {/* Диагонали для 3D эффекта */}
+      <motion.g
+        animate={{
+          opacity: [0.6, 0.6, 0.6, 0.6],
+        }}
+      >
+        <line x1="12" y1="12" x2="18" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <line x1="36" y1="12" x2="42" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <line x1="36" y1="36" x2="42" y2="30" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <line x1="18" y1="6" x2="42" y2="6" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+        <line x1="42" y1="6" x2="42" y2="30" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+      </motion.g>
+    </motion.svg>
+  )
+}
+
+/** Компонент анимированной загрузки */
+function LoadingAnimation() {
+  const messages = [
+    "Проверяю поступления",
+    "Проверяю списания",
+    "Проверяю заказы поставщикам",
+    "Пью кофе",
+  ]
+
+  const [currentIndex, setCurrentIndex] = React.useState(0)
+  const [animationCycle, setAnimationCycle] = React.useState(0)
+
+  React.useEffect(() => {
+    const cycleInterval = setInterval(() => {
+      setAnimationCycle((prev) => prev + 1)
+      setCurrentIndex((prev) => (prev + 1) % messages.length)
+    }, 2500)
+
+    return () => clearInterval(cycleInterval)
+  }, [messages.length])
+
+  return (
+    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-muted/30 to-muted/10 p-4">
+      <Card className="w-full max-w-md shadow-lg">
+        <CardContent className="pt-8 pb-8">
+          <div className="flex flex-col items-center gap-4">
+            {/* Анимированная коробка */}
+            <div className="relative h-12 w-12">
+              <AnimatePresence mode="wait">
+                <AnimatedBox key={animationCycle} cycle={animationCycle} />
+              </AnimatePresence>
+            </div>
+
+            {/* Анимированный текст */}
+            <div className="h-6 flex items-center justify-center">
+              <AnimatePresence mode="wait">
+                <motion.p
+                  key={currentIndex}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -20 }}
+                  transition={{ duration: 0.3 }}
+                  className="text-sm text-muted-foreground text-center"
+                >
+                  {messages[currentIndex]}
+                </motion.p>
+              </AnimatePresence>
+            </div>
+          </div>
+        </CardContent>
+      </Card>
+    </div>
+  )
+}
 
 /** Рекурсивный поиск материала по коду в дереве */
 function findMaterialByCode(
@@ -68,18 +249,7 @@ export default function MaterialMobileViewPage() {
   }, [code])
 
   if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-muted/30 p-4">
-        <Card className="w-full max-w-md">
-          <CardContent className="pt-6">
-            <div className="flex flex-col items-center gap-3 text-muted-foreground">
-              <IconBox className="h-8 w-8 animate-pulse" />
-              <p>Загрузка...</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-    )
+    return <LoadingAnimation />
   }
 
   if (error) {
@@ -131,7 +301,7 @@ export default function MaterialMobileViewPage() {
             <div className="flex items-center justify-between py-2 px-3 bg-muted/40 rounded-lg">
               <span className="text-sm font-medium">Всего в наличии:</span>
               <span className="text-base font-semibold tabular-nums">
-                {formatMaterialQty(totalQty)} {material.ЕдиницаИзмерения || ""}
+                {formatMaterialQty(totalQty)} {formatUnit(material.ЕдиницаИзмерения)}
               </span>
             </div>
 
@@ -151,7 +321,7 @@ export default function MaterialMobileViewPage() {
                         {balance.Склад || "Неизвестный склад"}
                       </span>
                       <span className="text-sm font-medium tabular-nums shrink-0 ml-3">
-                        {formatMaterialQty(balance.Количество)} {material.ЕдиницаИзмерения || ""}
+                        {formatMaterialQty(balance.Количество)} {formatUnit(material.ЕдиницаИзмерения)}
                       </span>
                     </div>
                   ))}
