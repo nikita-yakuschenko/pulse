@@ -55,9 +55,12 @@ export function KpiWeightsChart({ metrics, className }: KpiWeightsChartProps) {
         <ChartTooltip
           content={
             <ChartTooltipContent
-              formatter={(value, _name, _item, _index, payload) => {
+              formatter={(value, _name, _item, _index, payloadList) => {
+                const data = Array.isArray(payloadList) ? payloadList[0]?.payload : undefined
                 const weight =
-                  payload?.weight != null ? (payload.weight * 100).toFixed(0) : ""
+                  data && typeof data.weight === "number"
+                    ? (data.weight * 100).toFixed(0)
+                    : ""
                 return [`${Number(value).toFixed(4)}`, weight ? `Вклад (вес ${weight}%)` : "Вклад"]
               }}
               labelFormatter={(_, payload) => payload?.[0]?.payload?.fullName ?? ""}
