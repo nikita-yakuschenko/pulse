@@ -1,7 +1,7 @@
 "use client"
 
 import { TrendingUp } from "lucide-react"
-import { Area, AreaChart, CartesianGrid, XAxis, YAxis } from "recharts"
+import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis, YAxis } from "recharts"
 
 import {
   Card,
@@ -52,8 +52,12 @@ export function KpiChart({ data, className }: KpiChartProps) {
   const range = dataMax - dataMin || 0.2
   const padding = Math.max(range * 0.08, 0.02)
   const yMin = Math.max(0, dataMin - padding)
-  const yMax = Math.min(1, dataMax + padding)
+  // Верхняя граница: минимум 1.0 (100%), чтобы референсная линия всегда была видна
+  const yMax = Math.max(1.0, dataMax + padding)
   const yDomain: [number, number] = [yMin, yMax]
+  
+  // Явные метки оси Y с шагом 10%
+  const yTicks = [0.7, 0.8, 0.9, 1.0]
 
   const firstVal = chartData[0]?.value ?? 0
   const lastVal = chartData[chartData.length - 1]?.value ?? 0
@@ -80,7 +84,7 @@ export function KpiChart({ data, className }: KpiChartProps) {
           <AreaChart
             accessibilityLayer
             data={chartData}
-            margin={{ left: 12, right: 12 }}
+            margin={{ left: 16, right: 48, top: 24, bottom: 8 }}
           >
             <defs>
               <linearGradient id="kpiAreaGradient" x1="0" y1="1" x2="0" y2="0">
@@ -99,18 +103,32 @@ export function KpiChart({ data, className }: KpiChartProps) {
             />
             <YAxis
               domain={yDomain}
+              ticks={yTicks}
               tickLine={false}
               axisLine={false}
               tickMargin={8}
-              width={28}
+              width={40}
               tickFormatter={(v) => `${(v * 100).toFixed(0)}%`}
+            />
+            <ReferenceLine
+              y={1}
+              stroke="hsl(var(--muted-foreground))"
+              strokeDasharray="3 3"
+              strokeOpacity={0.5}
+              label={{
+                value: "100%",
+                position: "right",
+                fill: "hsl(var(--muted-foreground))",
+                fontSize: 10,
+              }}
             />
             <ChartTooltip
               cursor={false}
               content={
                 <ChartTooltipContent
                   indicator="line"
-                  formatter={(value) => [`${Number(value).toFixed(2)}`, "KPI общ"]}
+                  className="min-w-0 px-2 py-1.5"
+                  formatter={(value) => Number(value).toFixed(2)}
                   labelFormatter={(_, payload) =>
                     payload?.[0]?.payload?.fullLabel ?? ""
                   }
