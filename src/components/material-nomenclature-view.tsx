@@ -13,16 +13,19 @@ import {
   IconLoader,
   IconList,
   IconPlus,
+  IconQrcode,
   IconSearch,
   IconStar,
   IconX,
 } from "@tabler/icons-react"
 import { toast } from "sonner"
+import QRCode from "qrcode"
 import type { MaterialTreeNode } from "@/types/1c"
 import { cn, formatMaterialQty } from "@/lib/utils"
 import {
   Card,
   CardAction,
+  CardContent,
   CardDescription,
   CardFooter,
   CardHeader,
@@ -59,6 +62,20 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import { Separator } from "@/components/ui/separator"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
 
 /** Собрать из дерева только материалы (не группы), у которых наименование или код совпадает с запросом. Сквозной поиск.
  *  excludedGroupCodes — коды групп верхнего уровня, которые исключены из поиска (их поддеревья пропускаются).
@@ -123,6 +140,11 @@ export function MaterialNomenclatureView() {
   const [showHiddenGroups, setShowHiddenGroups] = React.useState(false)
   /** Коды групп верхнего уровня, исключённых из поиска (из API, привязка к пользователю) */
   const [excludedGroups, setExcludedGroups] = React.useState<Set<string>>(new Set())
+  /** Выбранный материал для отображения в Sheet */
+  const [selectedMaterial, setSelectedMaterial] = React.useState<MaterialTreeNode | null>(null)
+  /** QR-код для текущего материала */
+  const [qrCodeDataUrl, setQrCodeDataUrl] = React.useState<string>("")
+  const [qrCodeOpen, setQrCodeOpen] = React.useState(false)
 
   /** Сохранить исключения поиска через API (PUT — полная замена) */
   const saveExcludedGroups = React.useCallback(async (codes: Set<string>) => {
@@ -241,6 +263,34 @@ export function MaterialNomenclatureView() {
     if (index < 0) setDrillPath([])
     else setDrillPath((prev) => prev.slice(0, index + 1))
   }, [])
+
+  /** Генерация QR-кода для запроса остатков материала */
+  const generateQRCode = React.useCallback(async (materialCode: string) => {
+    try {
+      const url = `${window.location.origin}/dashboard/warehouse/balance?search=${encodeURIComponent(materialCode)}`
+      const dataUrl = await QRCode.toDataURL(url, {
+        width: 300,
+        margin: 2,
+        color: {
+          dark: "#000000",
+          light: "#ffffff",
+        },
+      })
+      setQrCodeDataUrl(dataUrl)
+      setQrCodeOpen(true)
+    } catch (error) {
+      toast.error("Не удалось сгенерировать QR-код")
+      console.error(error)
+    }
+  }, [])
+
+  /** Очистка QR-кода при закрытии Sheet */
+  React.useEffect(() => {
+    if (!selectedMaterial) {
+      setQrCodeDataUrl("")
+      setQrCodeOpen(false)
+    }
+  }, [selectedMaterial])
 
   // ---- Prefs ----
   /** Загрузить все настройки одним запросом (group prefs + material prefs + search exclusions) */
@@ -712,7 +762,14 @@ export function MaterialNomenclatureView() {
                                       </button>
                                     )
                                   })()}
-                                  <span className="truncate font-medium">{node.Наименование}</span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedMaterial(node)}
+                                    className="truncate font-medium text-left hover:text-primary transition-colors cursor-pointer flex-1 min-w-0"
+                                    title="Просмотреть детали"
+                                  >
+                                    {node.Наименование}
+                                  </button>
                                 </>
                               )}
                             </div>
@@ -727,6 +784,169 @@ export function MaterialNomenclatureView() {
           </div>
         </div>
       </div>
+
+      {/* Sheet с деталями материала */}
+      <Sheet open={selectedMaterial !== null} onOpenChange={(open) => !open && setSelectedMaterial(null)}>
+        <SheetContent
+          side="right"
+          className="flex flex-col p-0 overflow-hidden w-full sm:w-1/2 sm:max-w-none border-l"
+          showCloseButton={false}
+        >
+          {selectedMaterial && (
+            <>
+              {/* Заголовок: наименование крупно, под ним код с копированием */}
+              <SheetHeader className="shrink-0 px-6 pr-12 pt-6 pb-4 border-b">
+                <div className="flex flex-col gap-1">
+                  <SheetTitle className="text-xl font-bold tracking-tight text-foreground">
+                    {selectedMaterial.Наименование}
+                  </SheetTitle>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.preventDefault()
+                      navigator.clipboard.writeText(selectedMaterial.Код)
+                      toast.success(`Код ${selectedMaterial.Код} скопирован`)
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group w-fit text-sm font-mono text-muted-foreground"
+                    style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}
+                    title="Копировать код"
+                  >
+                    <span>{selectedMaterial.Код}</span>
+                    <IconCopy className="h-3.5 w-3.5 shrink-0" />
+                  </button>
+                </div>
+              </SheetHeader>
+
+              <div className="flex-1 overflow-y-auto">
+                <div className="px-6 py-6 space-y-6">
+                  {/* Основная информация */}
+                  <Card className="py-4">
+                    <CardContent className="pt-0 px-6 pb-0">
+                      <div className="flex items-center justify-between mb-3">
+                        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                          Основная информация
+                        </p>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => generateQRCode(selectedMaterial.Код)}
+                          className="h-7 gap-1.5"
+                        >
+                          <IconQrcode className="h-3.5 w-3.5" />
+                          QR-код остатков
+                        </Button>
+                      </div>
+                      <Separator className="mb-3" />
+                      <div className="grid grid-cols-3 gap-x-8 gap-y-4">
+                        {selectedMaterial.ЕдиницаИзмерения && (
+                          <div className="space-y-1">
+                            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                              Единица измерения
+                            </p>
+                            <p className="text-sm font-normal">{selectedMaterial.ЕдиницаИзмерения}</p>
+                          </div>
+                        )}
+                        {selectedMaterial.ВидНоменклатуры && (
+                          <div className="space-y-1">
+                            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                              Вид номенклатуры
+                            </p>
+                            <p className="text-sm font-normal">{selectedMaterial.ВидНоменклатуры}</p>
+                          </div>
+                        )}
+                        {selectedMaterial.НоменклатурнаяГруппа && (
+                          <div className="space-y-1">
+                            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                              Группа
+                            </p>
+                            <p className="text-sm font-normal">{selectedMaterial.НоменклатурнаяГруппа}</p>
+                          </div>
+                        )}
+                      </div>
+                    </CardContent>
+                  </Card>
+
+                  {/* Остатки по складам */}
+                  {selectedMaterial.Остатки && selectedMaterial.Остатки.length > 0 && (
+                    <Card className="overflow-hidden gap-1.5 py-4">
+                      <CardHeader className="py-0 px-6">
+                        <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                          Остатки по складам
+                          <span className="ml-2 font-normal normal-case text-foreground">
+                            {selectedMaterial.Остатки.length}
+                          </span>
+                        </p>
+                        <Separator className="my-3" />
+                      </CardHeader>
+                      <CardContent className="pt-0 px-6 pb-0">
+                        <div className="rounded-lg border divide-y bg-muted/20">
+                          {selectedMaterial.Остатки.map((balance, idx) => (
+                            <div key={idx} className="flex items-center justify-between px-4 py-3">
+                              <span className="text-sm text-foreground/80">{balance.Склад}</span>
+                              <span className="text-sm font-medium tabular-nums">
+                                {formatMaterialQty(balance.Количество)}{" "}
+                                {selectedMaterial.ЕдиницаИзмерения || ""}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                </div>
+              </div>
+            </>
+          )}
+        </SheetContent>
+      </Sheet>
+
+      {/* Dialog с QR-кодом, центрированный относительно Sheet */}
+      <Dialog open={qrCodeOpen} onOpenChange={setQrCodeOpen}>
+        <DialogContent 
+          className="fixed !left-[75%] !top-[50%] !translate-x-[-50%] !translate-y-[-50%] z-50 grid w-full max-w-md gap-4 rounded-lg border bg-background p-6 shadow-lg"
+        >
+          <DialogHeader>
+            <DialogTitle>QR-код для запроса остатков</DialogTitle>
+            <DialogDescription>
+              Отсканируйте QR-код для просмотра остатков материала{" "}
+              {selectedMaterial?.Код ? `(${selectedMaterial.Код})` : ""} по складам
+            </DialogDescription>
+          </DialogHeader>
+          <div className="flex flex-col items-center gap-4 py-4">
+            {qrCodeDataUrl && (
+              <div className="rounded-lg border bg-white p-4">
+                <img
+                  src={qrCodeDataUrl}
+                  alt="QR код для запроса остатков"
+                  className="w-[300px] h-[300px]"
+                />
+              </div>
+            )}
+            <div className="flex gap-2 w-full">
+              <Button
+                variant="outline"
+                className="flex-1"
+                onClick={() => {
+                  const link = document.createElement("a")
+                  link.download = `qr-${selectedMaterial?.Код || "material"}.png`
+                  link.href = qrCodeDataUrl
+                  link.click()
+                }}
+              >
+                <IconCopy className="h-4 w-4 mr-2" />
+                Скачать
+              </Button>
+              <Button
+                variant="default"
+                className="flex-1"
+                onClick={() => setQrCodeOpen(false)}
+              >
+                Закрыть
+              </Button>
+            </div>
+          </div>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
