@@ -46,7 +46,7 @@ import {
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import dynamic from "next/dynamic"
-import { cn } from "@/lib/utils"
+import { cn, formatDate } from "@/lib/utils"
 import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preference"
 import type { SupplierOrder, SupplierOrderAttachment } from "@/types/1c"
 import { OfficeViewer } from "@/components/office-viewer"
@@ -801,7 +801,7 @@ export function SupplierOrdersTable() {
                   className="cursor-pointer hover:bg-muted/50 transition-colors"
                   onClick={() => openOrderDetails(order)}
                 >
-                  <TableCell className="text-sm">{order.Дата}</TableCell>
+                  <TableCell className="text-sm">{formatDate(order.Дата)}</TableCell>
                   <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
@@ -1158,7 +1158,7 @@ export function SupplierOrdersTable() {
                   )}
                 </div>
                 <SheetDescription className="text-sm mt-1">
-                  {selectedOrder?.Дата}
+                  {formatDate(selectedOrder?.Дата)}
                 </SheetDescription>
               </SheetHeader>
 

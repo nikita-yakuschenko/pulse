@@ -32,6 +32,7 @@ import { TableSkeleton } from "@/components/ui/table-skeleton"
 import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
 import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preference"
 import { IconChevronLeft, IconChevronRight, IconCopy, IconLoader, IconSearch, IconX } from "@tabler/icons-react"
+import { formatDate } from "@/lib/utils"
 
 // Ответ 1С — массив объектов, структура может отличаться
 type SpecificationRecord = Record<string, unknown>
@@ -439,6 +440,8 @@ export default function SpecificationsPage() {
                           <span style={codeCellStyle}>{formatCell(row[key])}</span>
                           <IconCopy className="h-3 w-3 text-muted-foreground shrink-0" />
                         </button>
+                      ) : key === "ДатаПоставки" || key === "ДатаУтверждения" ? (
+                        formatDate(row[key])
                       ) : (
                         formatCell(row[key])
                       )}
@@ -660,15 +663,7 @@ const PLANNED_EXPENSES_LABELS: Record<string, string> = {
 const PLANNED_EXPENSES_KEYS = Object.keys(PLANNED_EXPENSES_LABELS)
 
 /** Форматирование даты для отображения (DD.MM.YYYY) */
-function formatDateDisplay(value: unknown): string {
-  if (value == null) return "—"
-  const d = typeof value === "number" ? new Date(value) : new Date(String(value))
-  if (Number.isNaN(d.getTime())) return "—"
-  const day = String(d.getDate()).padStart(2, "0")
-  const month = String(d.getMonth() + 1).padStart(2, "0")
-  const year = d.getFullYear()
-  return `${day}.${month}.${year}`
-}
+// Используем универсальную утилиту formatDate из utils.ts
 
 function SpecificationDetail({ data }: { data: SpecificationRecord }) {
   const materials = (data.Материалы ?? data.Materials) as unknown
@@ -690,7 +685,7 @@ function SpecificationDetail({ data }: { data: SpecificationRecord }) {
                 </p>
                 <p className="text-sm break-words font-normal">
                   {key === "ДатаПоставки" || key === "ДатаУтверждения"
-                    ? formatDateDisplay(data[key])
+                    ? formatDate(data[key])
                     : formatCell(data[key])}
                 </p>
               </div>
