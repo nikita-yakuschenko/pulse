@@ -363,8 +363,6 @@ const MATERIALS_GROUP_CODE = "00000007716"
 export function WarehouseInventoryView() {
   /** Дерево с остатками (ответ balances/get/list) — иерархия + Остатки по складам на листьях */
   const [balancesTree, setBalancesTree] = React.useState<MaterialTreeNode[] | null>(null)
-  const [loading, setLoading] = React.useState(true)
-  const [error, setError] = React.useState<string | null>(null)
   const [page, setPage] = React.useState(1)
   const {
     pageSize,
@@ -1028,11 +1026,9 @@ export function WarehouseInventoryView() {
         setDrillPath([])
       })
       .catch((e) => {
-        setError(e instanceof Error ? e.message : "Ошибка загрузки")
         setMaterialsError(e instanceof Error ? e.message : "Ошибка загрузки")
       })
       .finally(() => {
-        setLoading(false)
         setMaterialsLoading(false)
       })
   }, [])
@@ -1041,18 +1037,6 @@ export function WarehouseInventoryView() {
   React.useEffect(() => {
       fetchReorderPoints()
   }, [fetchReorderPoints])
-
-  if (loading) {
-    return <WarehouseInventorySkeleton />
-  }
-
-  if (error) {
-    return (
-      <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center text-destructive">
-        {error}
-      </div>
-    )
-  }
 
   return (
     <div className="px-4 lg:px-6">
@@ -1161,7 +1145,20 @@ export function WarehouseInventoryView() {
           <TabsContent value="inventory" className="mt-0">
             <div className="space-y-4">
               <div className="rounded-lg border overflow-hidden">
-                {!materialsLoading && !materialsError && displayLevel.length === 0 ? (
+                {materialsLoading ? (
+                  <div className="w-full min-h-[400px] flex items-center justify-center">
+                    <div className="flex flex-col items-center gap-2">
+                      <IconLoader className="h-8 w-8 animate-spin text-muted-foreground" />
+                      <p className="text-sm text-muted-foreground">Загрузка номенклатуры...</p>
+                    </div>
+                  </div>
+                ) : materialsError ? (
+                  <div className="w-full min-h-[280px] flex items-center justify-center">
+                    <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center text-destructive max-w-md">
+                      {materialsError}
+                    </div>
+                  </div>
+                ) : !materialsLoading && !materialsError && displayLevel.length === 0 ? (
                   <>
                     <div className="bg-muted/50 border-b flex items-center h-10 px-2">
                       <div className="flex flex-wrap items-center justify-between gap-3 min-h-10 h-10 px-2 w-full">
@@ -2256,11 +2253,3 @@ export function WarehouseInventoryView() {
   )
 }
 
-function WarehouseInventorySkeleton() {
-  return (
-    <div className="px-4 lg:px-6">
-      <Skeleton className="mb-4 h-9 w-80 rounded-lg" />
-      <Skeleton className="h-96 w-full rounded-lg" />
-    </div>
-  )
-}
