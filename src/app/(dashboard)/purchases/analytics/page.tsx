@@ -25,6 +25,7 @@ import {
 import { TableSkeleton } from "@/components/ui/table-skeleton"
 import { Button } from "@/components/ui/button"
 import { IconPlus, IconTrash } from "@tabler/icons-react"
+import { formatDate } from "@/lib/utils"
 
 type ReportRow = {
   id: string
@@ -102,20 +103,6 @@ export default function AnalyticsPage() {
       toast.error("Ошибка удаления")
     }
   }, [reportToDelete, loadReports])
-
-  const formatDate = (s: string) => {
-    try {
-      return new Date(s).toLocaleString("ru-RU", {
-        day: "2-digit",
-        month: "2-digit",
-        year: "numeric",
-        hour: "2-digit",
-        minute: "2-digit",
-      })
-    } catch {
-      return s
-    }
-  }
 
   return (
     <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">

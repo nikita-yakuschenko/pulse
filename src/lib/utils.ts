@@ -72,3 +72,51 @@ export function formatUnit(unit: string | null | undefined): string {
     .replace(/(м|m)\s*2|м\.?\s*кв\.?|кв\.?\s*м\.?/gi, SQUARE_METER)
     .replace(/(м|m)\s*3|м\.?\s*куб\.?|куб\.?\s*м\.?/gi, CUBIC_METER)
 }
+
+/**
+ * Универсальное форматирование дат в формат ДД.ММ.ГГ (например, 11.02.26)
+ * Принимает дату в любом формате:
+ * - Строка из 1С: "11.02.2026 14:30:00" или "11.02.2026"
+ * - Date объект
+ * - Timestamp (число)
+ */
+export function formatDate(value: unknown): string {
+  // Проверка на null/undefined
+  if (value == null) return "—"
+  
+  let date: Date
+  
+  // Если строка из 1С (ДД.ММ.ГГГГ ЧЧ:ММ:СС или ДД.ММ.ГГГГ)
+  if (typeof value === "string") {
+    const [datePart] = value.split(" ") // Убираем время если есть
+    const parts = datePart.split(".")
+    if (parts.length === 3) {
+      const [day, month, year] = parts.map(Number)
+      date = new Date(year, month - 1, day)
+    } else {
+      // Попытка распарсить как обычную дату
+      date = new Date(value)
+    }
+  } 
+  // Если число (timestamp)
+  else if (typeof value === "number") {
+    date = new Date(value)
+  } 
+  // Если Date объект
+  else if (value instanceof Date) {
+    date = value
+  }
+  // Если неизвестный тип - попытка преобразовать в строку и распарсить
+  else {
+    date = new Date(String(value))
+  }
+  
+  // Проверка на валидность
+  if (Number.isNaN(date.getTime())) return "—"
+  
+  const day = String(date.getDate()).padStart(2, "0")
+  const month = String(date.getMonth() + 1).padStart(2, "0")
+  const year = String(date.getFullYear()).slice(-2) // Последние 2 цифры года
+  
+  return `${day}.${month}.${year}`
+}
