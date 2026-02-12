@@ -717,7 +717,7 @@ export function PaymentsTable() {
         <Table className="[&_tbody_td]:h-10 [&_tbody_td]:py-1">
           <TableHeader className="bg-muted">
             <TableRow>
-              <TableHead className="w-[140px]">Дата</TableHead>
+              <TableHead className="w-[90px]">Дата</TableHead>
               <TableHead className="w-[120px]">Номер</TableHead>
               <TableHead>Контрагент</TableHead>
               <TableHead>Организация</TableHead>
