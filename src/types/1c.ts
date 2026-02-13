@@ -104,6 +104,30 @@ export interface PaymentsResponse {
 }
 
 /**
+ * Поступление товаров и услуг из 1С (receipts/get/...)
+ */
+export interface Receipt {
+  /** Номер документа */
+  Номер?: string
+  /** Дата в формате "DD.MM.YYYY HH:MM:SS" */
+  Дата?: string
+  /** Контрагент (поставщик) */
+  Контрагент?: string
+  /** Организация */
+  Организация?: string
+  /** Сумма */
+  Сумма?: number
+  [key: string]: unknown
+}
+
+/**
+ * Ответ API со списком поступлений
+ */
+export interface ReceiptsResponse {
+  data: Receipt[]
+}
+
+/**
  * Складской остаток из 1С
  */
 export interface WarehouseBalance {

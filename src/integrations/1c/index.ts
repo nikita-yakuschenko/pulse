@@ -411,5 +411,85 @@ export async function getPayments(userMetadata: Record<string, unknown>, filters
   return await client.get(endpoint)
 }
 
+/**
+ * Параметры фильтрации поступлений
+ * API 1С: receipts/get/list | get/code/{code} | get/code/{code}/year/{year} | get/contractor/... | get/org/... | get/year/... | get/material/...
+ */
+export interface ReceiptsFilters {
+  code?: string
+  year?: string
+  contractor?: string
+  org?: string
+  material?: string
+  full?: boolean
+}
+
+/**
+ * Строит endpoint для запроса поступлений.
+ * Порядок: code (+ year) | contractor (+ org, + year, + full) | org | year | material (+ full, + year) | list
+ */
+export function buildReceiptsEndpoint(filters: ReceiptsFilters): string {
+  const { code, year, contractor, org, material, full } = filters
+  const hasCode = !!code?.trim()
+  const hasYear = !!year?.trim()
+  const hasContractor = !!contractor?.trim()
+  const hasOrg = !!org?.trim()
+  const hasMaterial = !!material?.trim()
+  const hasFull = !!full
+
+  const encodePath = (value: string): string => {
+    const normalized = value
+      .replaceAll("+", "_plus_")
+      .replaceAll("-", "_dash_")
+    return encodeURIComponent(normalized)
+  }
+
+  if (hasCode) {
+    const base = `receipts/get/code/${encodePath(code!)}`
+    return hasYear ? `${base}/year/${encodePath(year!)}` : base
+  }
+  if (hasContractor) {
+    if (hasOrg && hasYear && hasFull) {
+      return `receipts/get/contractor/${encodePath(contractor!)}/org/${encodePath(org!)}/year/${encodePath(year!)}/full/1`
+    }
+    if (hasOrg && hasYear) {
+      return `receipts/get/contractor/${encodePath(contractor!)}/org/${encodePath(org!)}/year/${encodePath(year!)}`
+    }
+    if (hasOrg) {
+      return `receipts/get/contractor/${encodePath(contractor!)}/org/${encodePath(org!)}`
+    }
+    if (hasYear) {
+      return `receipts/get/contractor/${encodePath(contractor!)}/year/${encodePath(year!)}`
+    }
+    return `receipts/get/contractor/${encodePath(contractor!)}`
+  }
+  if (hasOrg) {
+    return `receipts/get/org/${encodePath(org!)}`
+  }
+  if (hasYear && !hasCode && !hasContractor && !hasMaterial) {
+    return `receipts/get/year/${encodePath(year!)}`
+  }
+  if (hasMaterial) {
+    const base = `receipts/get/material/${encodePath(material!)}`
+    if (hasFull && hasYear) return `${base}/full/1/year/${encodePath(year!)}`
+    if (hasFull) return `${base}/full/1`
+    if (hasYear) return `${base}/year/${encodePath(year!)}`
+    return base
+  }
+  return "receipts/get/list"
+}
+
+/**
+ * Получение списка поступлений из 1С с фильтрацией
+ */
+export async function getReceipts(userMetadata: Record<string, unknown>, filters?: ReceiptsFilters) {
+  const credentials = await getOneCCredentials(userMetadata)
+  if (!credentials) throw new Error("1С не настроена")
+  const client = createOneCClient(credentials)
+  const f = filters || {}
+  const endpoint = buildReceiptsEndpoint(f)
+  return await client.get(endpoint)
+}
+
 export * from "@/lib/1c-client"
 
