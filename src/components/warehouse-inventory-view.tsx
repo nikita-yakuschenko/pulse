@@ -1487,12 +1487,11 @@ export function WarehouseInventoryView() {
                                         navigator.clipboard.writeText(node.Код)
                                         toast.success(`Код ${node.Код} скопирован`)
                                       }}
-                                      className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group text-sm"
+                                      className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group text-sm font-mono text-muted-foreground"
                                       title="Копировать код"
+                                      style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}
                                     >
-                                      <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}>
-                                        {node.Код}
-                                      </span>
+                                      <span>{node.Код}</span>
                                       <IconCopy className="h-3.5 w-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity shrink-0" />
                                     </button>
                                   ) : null}
@@ -1592,12 +1591,11 @@ export function WarehouseInventoryView() {
                                       navigator.clipboard.writeText(node.Код)
                                       toast.success(`Код ${node.Код} скопирован`)
                                     }}
-                                    className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group text-sm"
+                                    className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group text-sm font-mono text-muted-foreground"
                                     title="Копировать код"
+                                    style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}
                                   >
-                                    <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}>
-                                      {node.Код}
-                                    </span>
+                                    <span>{node.Код}</span>
                                     <IconCopy className="h-3.5 w-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity shrink-0" />
                                   </button>
                                 ) : null}
@@ -1827,10 +1825,11 @@ export function WarehouseInventoryView() {
                                     navigator.clipboard.writeText(point.itemCode)
                                     toast.success(`Код ${point.itemCode} скопирован`)
                                   }}
-                                  className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group"
+                                  className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group text-sm font-mono text-muted-foreground"
                                   title="Копировать код"
+                                  style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}
                                 >
-                                  <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}>
+                                  <span>
                                     {point.itemCode}
                                   </span>
                                   <IconCopy className="h-3.5 w-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity" />
@@ -1899,7 +1898,7 @@ export function WarehouseInventoryView() {
 
       {/* Sheet добавления/редактирования точки заказа */}
       <Sheet open={dialogOpen} onOpenChange={(open) => !open && handleCloseDialog()}>
-        <SheetContent side="right" className="flex flex-col p-0 overflow-hidden !w-[50vw] !max-w-[50vw] border-l" showCloseButton={false}>
+        <SheetContent side="right" className="flex flex-col p-0 overflow-hidden w-[50vw]! max-w-[50vw]! border-l" showCloseButton={false}>
           <SheetHeader className="shrink-0 px-6 pt-6 pb-4 border-b bg-muted/30">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
@@ -1956,7 +1955,7 @@ export function WarehouseInventoryView() {
                     </button>
                   )}
                 </div>
-                <div className="rounded-md border max-h-[22rem] overflow-y-auto">
+                <div className="rounded-md border max-h-88 overflow-y-auto">
                   {[...reorderPickerTree]
                     .sort((a, b) => {
                       if (a.ЭтоГруппа && !b.ЭтоГруппа) return -1
@@ -1987,7 +1986,7 @@ export function WarehouseInventoryView() {
               {warehouses.length === 0 ? (
                 <p className="text-sm text-muted-foreground">Загрузка складов...</p>
               ) : (
-                <div className="rounded-md border max-h-[11rem] overflow-y-auto p-2 space-y-1.5">
+                <div className="rounded-md border max-h-44 overflow-y-auto p-2 space-y-1.5">
                   {[...warehouses]
                     .sort((a, b) => {
                       const aSelected = selectedWarehouseCodes.includes(String(a.Код ?? ""))
@@ -2048,7 +2047,7 @@ export function WarehouseInventoryView() {
 
       {/* Sheet просмотра позиций точки заказа */}
       <Sheet open={detailsPoint !== null} onOpenChange={(open) => !open && setDetailsPoint(null)}>
-        <SheetContent side="right" className="flex flex-col p-0 overflow-hidden !w-[50vw] !max-w-[50vw] border-l" showCloseButton={false}>
+        <SheetContent side="right" className="flex flex-col p-0 overflow-hidden w-[50vw]! max-w-[50vw]! border-l" showCloseButton={false}>
           {detailsPoint ? (() => {
             const ptBalances = filterBalancesByWarehouses(balances, detailsPoint.warehouseCodes, warehouses)
             const codes = (detailsPoint.isGroup && Array.isArray(detailsPoint.itemCodes)
@@ -2088,7 +2087,7 @@ export function WarehouseInventoryView() {
             </SheetHeader>
           )}
           <div className="space-y-4 p-6 overflow-y-auto flex-1 min-h-0">
-            <div className="rounded-md border overflow-hidden min-w-0 overflow-y-auto max-h-[26rem]">
+            <div className="rounded-md border overflow-hidden min-w-0 overflow-y-auto max-h-104">
               <Table>
                 <TableHeader className="bg-muted/50">
                   <TableRow>
@@ -2286,7 +2285,7 @@ export function WarehouseInventoryView() {
 
       {/* Dialog с QR-кодом */}
       <Dialog open={qrCodeOpen} onOpenChange={setQrCodeOpen}>
-        <DialogContent className="sm:max-w-md !left-[75%] !top-[50%] !-translate-x-1/2 !-translate-y-1/2">
+        <DialogContent className="sm:max-w-md left-[75%]! top-[50%]! -translate-x-1/2! -translate-y-1/2!">
           <DialogHeader>
             <DialogTitle>QR-код остатков</DialogTitle>
             <DialogDescription>
