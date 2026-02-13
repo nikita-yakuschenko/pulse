@@ -1444,7 +1444,7 @@ export function WarehouseInventoryView() {
                     <TableHeader className="bg-muted">
                       <TableRow>
                         <TableHead className="min-w-0">Код</TableHead>
-                        <TableHead className="min-w-0 pl-[128px]">Номенклатура</TableHead>
+                        <TableHead className="min-w-0">Номенклатура</TableHead>
                         <TableHead className="min-w-0">Склад</TableHead>
                         <TableHead className="min-w-0 text-right">Количество</TableHead>
                         <TableHead className="min-w-0 whitespace-nowrap">Ед. изм.</TableHead>
