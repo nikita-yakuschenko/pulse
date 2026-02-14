@@ -208,8 +208,14 @@ function JollyDateRangePicker<T extends AriaDateValue>({
 }: JollyDateRangePickerProps<T>) {
   const isEmpty = props.value == null
   const calendarButtonRef = React.useRef<HTMLButtonElement>(null)
+  type OnChangeValue<T extends AriaDateValue> = Parameters<
+    NonNullable<JollyDateRangePickerProps<T>["onChange"]>
+  >[0]
   const onQuickSelect = React.useCallback(
-    (range: QuickSelectRange | null) => props.onChange?.(range ?? undefined),
+    (range: QuickSelectRange | null) =>
+      props.onChange?.(
+        (range === null ? null : range) as OnChangeValue<T>
+      ),
     [props.onChange]
   )
   return (
