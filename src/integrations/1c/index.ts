@@ -379,7 +379,7 @@ export function buildPaymentsEndpoint(filters: PaymentsFilters): string {
       endpoint = `payments/get/responsible/${encodePath(responsible!)}`
     }
   }
-  // Одиночные фильтры
+  // Одиночные фильтры (1С не поддерживает org+status в одном запросе — статус применяется на клиенте)
   else if (hasOrg) {
     endpoint = `payments/get/org/${encodePath(org!)}`
   } else if (hasStatus) {

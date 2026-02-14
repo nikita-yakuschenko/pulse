@@ -63,11 +63,17 @@ const PdfViewer = dynamic(
  */
 function parseDate(dateStr: string): Date {
   if (!dateStr?.trim()) return new Date(0)
-  const [datePart, timePart] = dateStr.trim().split(" ")
+  const s = dateStr.trim()
+  if (s.includes("-") && !s.includes(".")) {
+    const [y, m, d] = s.split("-").map(Number)
+    if (!Number.isNaN(y) && !Number.isNaN(m) && !Number.isNaN(d)) return new Date(y, m - 1, d)
+  }
+  const [datePart, timePart] = s.split(" ")
   const parts = (datePart || "").split(".")
   const [day = 0, month = 1, year = 0] = parts.map(Number)
+  const y = year > 0 && year < 100 ? 2000 + year : year
   const [hours = 0, minutes = 0, seconds = 0] = (timePart || "0:0:0").split(":").map(Number)
-  return new Date(year, month - 1, day, hours, minutes, seconds)
+  return new Date(y, month - 1, day, hours, minutes, seconds)
 }
 
 /**
@@ -362,6 +368,9 @@ export function PaymentsTable() {
       const data = await response.json()
 
       let paymentsData: Payment[] = data.data || []
+      if (status.trim()) {
+        paymentsData = paymentsData.filter((p) => (p.Статус ?? "") === status.trim())
+      }
       const fromTs = parseDateToTime(dateFrom || undefined)
       const toTsEnd = dateTo ? parseDateToTime(dateTo) + 24 * 60 * 60 * 1000 - 1 : 0
       if (fromTs > 0 || toTsEnd > 0) {
