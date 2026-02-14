@@ -317,7 +317,7 @@ export default function SchedulePage() {
       <Sheet open={sheetOpen} onOpenChange={setSheetOpen}>
         <SheetContent
           side="right"
-          className="flex flex-col p-0 overflow-hidden !w-[50vw] !max-w-[50vw] border-l"
+          className="flex flex-col p-0 overflow-hidden border-l"
           showCloseButton={false}
         >
           {selectedObject && (

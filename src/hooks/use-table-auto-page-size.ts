@@ -12,6 +12,7 @@ const MAX_AUTO_ROWS = 100
 /**
  * На десктопе возвращает число строк таблицы, умещающихся в видимую высоту вьюпорта.
  * Контейнер (ref) — блок с таблицей; по его getBoundingClientRect().top считаем доступную высоту.
+ * enabled: когда false (например, вкладка не активна), возвращает 0 и эффект перезапускается при enabled=true.
  */
 export function useTableAutoPageSize(
   containerRef: RefObject<HTMLElement | null>,
@@ -19,15 +20,22 @@ export function useTableAutoPageSize(
     rowHeightPx?: number
     offsetBottomPx?: number
     desktopMinWidthPx?: number
+    /** Если false, возвращается 0 и измерение не выполняется (нужно для вкладок, где ref появляется только при активации). */
+    enabled?: boolean
   }
 ): number {
   const rowHeight = options?.rowHeightPx ?? ROW_HEIGHT_PX
   const offsetBottom = options?.offsetBottomPx ?? PAGINATION_OFFSET_PX
   const desktopMin = options?.desktopMinWidthPx ?? DESKTOP_MIN_WIDTH
+  const enabled = options?.enabled !== false
 
   const [autoPageSize, setAutoPageSize] = useState(0)
 
   useEffect(() => {
+    if (!enabled) {
+      setAutoPageSize(0)
+      return
+    }
     const update = () => {
       if (window.innerWidth < desktopMin) {
         setAutoPageSize(0)
@@ -51,7 +59,7 @@ export function useTableAutoPageSize(
       ro.disconnect()
       window.removeEventListener("resize", update)
     }
-  }, [containerRef, rowHeight, offsetBottom, desktopMin])
+  }, [enabled, containerRef, rowHeight, offsetBottom, desktopMin])
 
-  return autoPageSize
+  return enabled ? autoPageSize : 0
 }

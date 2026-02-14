@@ -1894,7 +1894,7 @@ export function WarehouseInventoryView() {
 
       {/* Sheet добавления/редактирования точки заказа */}
       <Sheet open={dialogOpen} onOpenChange={(open) => !open && handleCloseDialog()}>
-        <SheetContent side="right" className="flex flex-col p-0 overflow-hidden w-[50vw]! max-w-[50vw]! border-l" showCloseButton={false}>
+        <SheetContent side="right" className="flex flex-col p-0 overflow-hidden border-l" showCloseButton={false}>
           <SheetHeader className="shrink-0 px-6 pt-6 pb-4 border-b bg-muted/30">
             <div className="flex items-start justify-between gap-4">
               <div className="min-w-0">
@@ -2043,7 +2043,7 @@ export function WarehouseInventoryView() {
 
       {/* Sheet просмотра позиций точки заказа */}
       <Sheet open={detailsPoint !== null} onOpenChange={(open) => !open && setDetailsPoint(null)}>
-        <SheetContent side="right" className="flex flex-col p-0 overflow-hidden w-[50vw]! max-w-[50vw]! border-l" showCloseButton={false}>
+        <SheetContent side="right" className="flex flex-col p-0 overflow-hidden border-l" showCloseButton={false}>
           {detailsPoint ? (() => {
             const ptBalances = filterBalancesByWarehouses(balances, detailsPoint.warehouseCodes, warehouses)
             const codes = (detailsPoint.isGroup && Array.isArray(detailsPoint.itemCodes)
@@ -2165,7 +2165,7 @@ export function WarehouseInventoryView() {
       <Sheet open={selectedMaterial !== null} onOpenChange={(open) => !open && setSelectedMaterial(null)}>
         <SheetContent
           side="right"
-          className="flex flex-col p-0 overflow-hidden w-full sm:w-1/2 sm:max-w-none border-l"
+          className="flex flex-col p-0 overflow-hidden border-l"
           showCloseButton={false}
         >
           {selectedMaterial && (

@@ -27,8 +27,19 @@ export function createBasicAuthHeader(username: string, password: string): strin
   return `Basic ${base64}`
 }
 
-/** Таймаут запросов к 1С (сек). 1С может отвечать долго; 502 часто из-за таймаута прокси, а не падения 1С. */
+/** Таймаут запросов к 1С (мс). */
 const ONE_C_REQUEST_TIMEOUT_MS = 120_000
+
+/** Задержка перед повтором при ошибке соединения (мс). */
+const RETRY_DELAY_MS = 2_000
+
+/** Проверка: ошибка установления соединения (таймаут/сеть), при которой имеет смысл повторить запрос. */
+function isConnectOrNetworkError(err: unknown): boolean {
+  const cause = err && typeof err === "object" && "cause" in err ? (err as { cause?: unknown }).cause : null
+  const code = cause && typeof cause === "object" && "code" in cause ? (cause as { code?: string }).code : ""
+  const msg = err instanceof Error ? err.message : String(err)
+  return code === "UND_ERR_CONNECT_TIMEOUT" || /connect timeout|fetch failed|ECONNRESET|ETIMEDOUT/i.test(msg)
+}
 
 /**
  * Создаёт клиент для работы с 1С API
@@ -39,126 +50,158 @@ export function createOneCClient(credentials: OneCCredentials) {
 
   return {
     /**
-     * Отправляет GET-запрос к 1С API
+     * Отправляет GET-запрос к 1С API. При таймауте соединения или сетевой ошибке — один повтор через RETRY_DELAY_MS.
      */
     async get<T = unknown>(endpoint: string, options?: RequestInit): Promise<T> {
       const url = `${baseUrl}${endpoint}`
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), ONE_C_REQUEST_TIMEOUT_MS)
-      const signal = options?.signal ?? controller.signal
+      const doFetch = async (): Promise<T> => {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), ONE_C_REQUEST_TIMEOUT_MS)
+        const signal = options?.signal ?? controller.signal
+
+        try {
+          const res = await fetch(url, {
+            ...options,
+            method: "GET",
+            signal,
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": authHeader,
+              ...options?.headers,
+            },
+          })
+          clearTimeout(timeoutId)
+
+          if (!res.ok) {
+            const bodyText = await res.text().catch(() => "")
+            if (res.status === 502) {
+              throw new Error(
+                "1С не успел ответить (502). Часто это таймаут прокси при долгом ответе 1С — повторите запрос или проверьте доступность 1С."
+              )
+            }
+            const detail = bodyText ? ` | ${bodyText.slice(0, 500)}` : ""
+            throw new Error(`1С API error: ${res.status} ${res.statusText}${detail}`)
+          }
+
+          return res.json() as Promise<T>
+        } catch (err) {
+          clearTimeout(timeoutId)
+          if (err instanceof Error && err.name === "AbortError") {
+            throw new Error("Таймаут запроса к 1С. Сервис отвечает слишком долго.")
+          }
+          throw err
+        }
+      }
 
       try {
-        const res = await fetch(url, {
-          ...options,
-          method: "GET",
-          signal,
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": authHeader,
-            ...options?.headers,
-          },
-        })
-        clearTimeout(timeoutId)
-
-        if (!res.ok) {
-          if (res.status === 502) {
-            throw new Error(
-              "1С не успел ответить (502). Часто это таймаут прокси при долгом ответе 1С — повторите запрос или проверьте доступность 1С."
-            )
-          }
-          throw new Error(`1С API error: ${res.status} ${res.statusText}`)
-        }
-
-        return res.json()
-      } catch (err) {
-        clearTimeout(timeoutId)
-        if (err instanceof Error && err.name === "AbortError") {
-          throw new Error("Таймаут запроса к 1С. Сервис отвечает слишком долго.")
-        }
-        throw err
+        return await doFetch()
+      } catch (firstErr) {
+        if (!isConnectOrNetworkError(firstErr)) throw firstErr
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+        return await doFetch()
       }
     },
 
     /**
-     * GET с телом как ArrayBuffer (для скачивания файлов). Возвращает { data, headers }.
+     * GET с телом как ArrayBuffer. При таймауте соединения — один повтор.
      */
     async getArrayBuffer(endpoint: string, options?: RequestInit): Promise<{ data: ArrayBuffer; headers: Headers }> {
       const url = `${baseUrl}${endpoint}`
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), ONE_C_REQUEST_TIMEOUT_MS)
-      const signal = options?.signal ?? controller.signal
+      const doFetch = async (): Promise<{ data: ArrayBuffer; headers: Headers }> => {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), ONE_C_REQUEST_TIMEOUT_MS)
+        const signal = options?.signal ?? controller.signal
+
+        try {
+          const res = await fetch(url, {
+            ...options,
+            method: "GET",
+            signal,
+            headers: {
+              "Authorization": authHeader,
+              ...options?.headers,
+            },
+          })
+          clearTimeout(timeoutId)
+
+          if (!res.ok) {
+            if (res.status === 502) {
+              throw new Error(
+                "1С не успел ответить (502). Часто это таймаут прокси при долгом ответе 1С — повторите запрос или проверьте доступность 1С."
+              )
+            }
+            throw new Error(`1С API error: ${res.status} ${res.statusText}`)
+          }
+
+          const data = await res.arrayBuffer()
+          return { data, headers: res.headers }
+        } catch (err) {
+          clearTimeout(timeoutId)
+          if (err instanceof Error && err.name === "AbortError") {
+            throw new Error("Таймаут запроса к 1С. Сервис отвечает слишком долго.")
+          }
+          throw err
+        }
+      }
 
       try {
-        const res = await fetch(url, {
-          ...options,
-          method: "GET",
-          signal,
-          headers: {
-            "Authorization": authHeader,
-            ...options?.headers,
-          },
-        })
-        clearTimeout(timeoutId)
-
-        if (!res.ok) {
-          if (res.status === 502) {
-            throw new Error(
-              "1С не успел ответить (502). Часто это таймаут прокси при долгом ответе 1С — повторите запрос или проверьте доступность 1С."
-            )
-          }
-          throw new Error(`1С API error: ${res.status} ${res.statusText}`)
-        }
-
-        const data = await res.arrayBuffer()
-        return { data, headers: res.headers }
-      } catch (err) {
-        clearTimeout(timeoutId)
-        if (err instanceof Error && err.name === "AbortError") {
-          throw new Error("Таймаут запроса к 1С. Сервис отвечает слишком долго.")
-        }
-        throw err
+        return await doFetch()
+      } catch (firstErr) {
+        if (!isConnectOrNetworkError(firstErr)) throw firstErr
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+        return await doFetch()
       }
     },
 
     /**
-     * Отправляет POST-запрос к 1С API
+     * Отправляет POST-запрос к 1С API. При таймауте соединения — один повтор.
      */
     async post<T = unknown>(endpoint: string, body: unknown, options?: RequestInit): Promise<T> {
       const url = `${baseUrl}${endpoint}`
-      const controller = new AbortController()
-      const timeoutId = setTimeout(() => controller.abort(), ONE_C_REQUEST_TIMEOUT_MS)
-      const signal = options?.signal ?? controller.signal
+      const doFetch = async (): Promise<T> => {
+        const controller = new AbortController()
+        const timeoutId = setTimeout(() => controller.abort(), ONE_C_REQUEST_TIMEOUT_MS)
+        const signal = options?.signal ?? controller.signal
+
+        try {
+          const res = await fetch(url, {
+            ...options,
+            method: "POST",
+            signal,
+            headers: {
+              "Content-Type": "application/json",
+              "Authorization": authHeader,
+              ...options?.headers,
+            },
+            body: JSON.stringify(body),
+          })
+          clearTimeout(timeoutId)
+
+          if (!res.ok) {
+            if (res.status === 502) {
+              throw new Error(
+                "1С не успел ответить (502). Часто это таймаут прокси при долгом ответе 1С — повторите запрос или проверьте доступность 1С."
+              )
+            }
+            throw new Error(`1С API error: ${res.status} ${res.statusText}`)
+          }
+
+          return res.json() as Promise<T>
+        } catch (err) {
+          clearTimeout(timeoutId)
+          if (err instanceof Error && err.name === "AbortError") {
+            throw new Error("Таймаут запроса к 1С. Сервис отвечает слишком долго.")
+          }
+          throw err
+        }
+      }
 
       try {
-        const res = await fetch(url, {
-          ...options,
-          method: "POST",
-          signal,
-          headers: {
-            "Content-Type": "application/json",
-            "Authorization": authHeader,
-            ...options?.headers,
-          },
-          body: JSON.stringify(body),
-        })
-        clearTimeout(timeoutId)
-
-        if (!res.ok) {
-          if (res.status === 502) {
-            throw new Error(
-              "1С не успел ответить (502). Часто это таймаут прокси при долгом ответе 1С — повторите запрос или проверьте доступность 1С."
-            )
-          }
-          throw new Error(`1С API error: ${res.status} ${res.statusText}`)
-        }
-
-        return res.json()
-      } catch (err) {
-        clearTimeout(timeoutId)
-        if (err instanceof Error && err.name === "AbortError") {
-          throw new Error("Таймаут запроса к 1С. Сервис отвечает слишком долго.")
-        }
-        throw err
+        return await doFetch()
+      } catch (firstErr) {
+        if (!isConnectOrNetworkError(firstErr)) throw firstErr
+        await new Promise((r) => setTimeout(r, RETRY_DELAY_MS))
+        return await doFetch()
       }
     },
 

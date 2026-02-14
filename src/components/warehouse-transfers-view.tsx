@@ -7,6 +7,7 @@ import {
   IconChevronRight,
   IconCopy,
   IconFileText,
+  IconLoader,
   IconPackage,
   IconPlus,
   IconX,
@@ -40,10 +41,18 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty"
+import {
+  Sheet,
+  SheetContent,
+  SheetHeader,
+  SheetTitle,
+} from "@/components/ui/sheet"
+import { Card, CardContent } from "@/components/ui/card"
+import { Separator } from "@/components/ui/separator"
 import { useUserPreferences } from "@/contexts/user-preferences-context"
 import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
 import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preference"
-import { formatDate } from "@/lib/utils"
+import { formatDate, formatUnit } from "@/lib/utils"
 import { parseDate } from "@internationalized/date"
 import { JollyDateRangePicker } from "@/components/ui/date-range-picker"
 
@@ -73,7 +82,7 @@ function ClearFilterButton({ onClick, "aria-label": ariaLabel = "Сбросит�
   )
 }
 
-const TAB_PREFERENCE_KEY = "warehouse-movements-tab"
+const TAB_PREFERENCE_KEY = "warehouse-transfers-tab"
 const FILTERS_STORAGE_KEY = "pulse:filters:warehouse-requirements"
 
 // Один раз читаем сохранённые фильтры для инициализации state (избегаем гонки с эффектом сохранения)
@@ -128,7 +137,29 @@ type DemandRow = {
   Материалы?: string
 }
 
-export function WarehouseMovementsView() {
+type TransferRow = {
+  Номер?: string
+  Дата?: string
+  СкладОтправитель?: string
+  СкладПолучатель?: string
+  Ответственный?: string
+  Комментарий?: string
+  Материалы?: string
+}
+
+type TransferGoodsRow = {
+  НомерСтроки?: string
+  Номенклатура?: string
+  ХарактеристикаНоменклатуры?: string
+  ЕдиницаИзмерения?: string
+  Количество?: number
+}
+
+type TransferFull = TransferRow & {
+  Товары?: TransferGoodsRow[]
+}
+
+export function WarehouseTransfersView() {
   const { preferences, setPreference, isLoaded: prefsLoadedTab } = useUserPreferences()
   const [activeTab, setActiveTabState] = React.useState<"requirements" | "transfers" | "realizations">("requirements")
   const [loading, setLoading] = React.useState(false)
@@ -140,6 +171,15 @@ export function WarehouseMovementsView() {
   const [filterDateFrom, setFilterDateFrom] = React.useState(() => getInitialWarehouseFilters().dateFrom)
   const [filterDateTo, setFilterDateTo] = React.useState(() => getInitialWarehouseFilters().dateTo)
   const [page, setPage] = React.useState(1)
+
+  const [transfers, setTransfers] = React.useState<TransferRow[]>([])
+  const [transfersError, setTransfersError] = React.useState<string | null>(null)
+  const [transfersLoading, setTransfersLoading] = React.useState(false)
+  const [transferFilterNumber, setTransferFilterNumber] = React.useState("")
+  const [selectedTransferFull, setSelectedTransferFull] = React.useState<TransferFull | null>(null)
+  const [transferSheetOpen, setTransferSheetOpen] = React.useState(false)
+  const [transferDetailLoading, setTransferDetailLoading] = React.useState(false)
+  const [transfersPage, setTransfersPage] = React.useState(1)
 
   // Сброс кэша при размонтировании, чтобы при повторном входе читать актуальный localStorage
   React.useEffect(() => () => { cachedInitialWarehouseFilters = null }, [])
@@ -182,6 +222,20 @@ export function WarehouseMovementsView() {
   } = useTablePageSizePreference("warehouse-demands-page-size")
   const useAutoSize = pageSizeSelectValue === "auto" && autoPageSize > 0
   const effectivePageSize = useAutoSize ? autoPageSize : pageSize
+
+  const transfersTableContainerRef = React.useRef<HTMLDivElement>(null)
+  const transfersAutoPageSize = useTableAutoPageSize(transfersTableContainerRef, {
+    enabled: activeTab === "transfers",
+  })
+  const {
+    pageSize: transferPageSize,
+    pageSizeSelectValue: transferPageSizeSelectValue,
+    setPageSizeAndSave: setTransferPageSizeAndSave,
+    setPageSizeSelectValue: setTransferPageSizeSelectValue,
+    PAGE_SIZE_PRESETS: TRANSFER_PAGE_SIZE_PRESETS,
+  } = useTablePageSizePreference("warehouse-transfers-page-size")
+  const useTransferAutoSize = transferPageSizeSelectValue === "auto" && transfersAutoPageSize > 0
+  const effectiveTransferPageSize = useTransferAutoSize ? transfersAutoPageSize : transferPageSize
 
   // Парсинг даты из 1С (ДД.ММ.ГГГГ или ДД.ММ.ГГ) или из input[type=date] (YYYY-MM-DD) в timestamp
   const parseDateToTime = React.useCallback((dateStr: string | undefined): number => {
@@ -239,6 +293,16 @@ export function WarehouseMovementsView() {
   const startIdx = (page - 1) * effectivePageSize
   const currentDemands = filteredDemands.slice(startIdx, startIdx + effectivePageSize)
 
+  const filteredTransfers = React.useMemo(() => {
+    let list = transfers
+    const numQ = transferFilterNumber.trim().toLowerCase()
+    if (numQ) list = list.filter((r) => (r.Номер ?? "").toLowerCase().includes(numQ))
+    return [...list].sort((a, b) => parseDateToTime(b.Дата) - parseDateToTime(a.Дата))
+  }, [transfers, transferFilterNumber, parseDateToTime])
+  const totalTransferPages = Math.max(1, Math.ceil(filteredTransfers.length / effectiveTransferPageSize))
+  const startTransferIdx = (transfersPage - 1) * effectiveTransferPageSize
+  const currentTransfers = filteredTransfers.slice(startTransferIdx, startTransferIdx + effectiveTransferPageSize)
+
   React.useEffect(() => {
     if (autoPageSize === 0 && pageSizeSelectValue === "auto") {
       setPageSizeSelectValue("17")
@@ -246,8 +310,26 @@ export function WarehouseMovementsView() {
   }, [autoPageSize, pageSizeSelectValue, setPageSizeSelectValue])
 
   React.useEffect(() => {
+    if (transfersAutoPageSize === 0 && transferPageSizeSelectValue === "auto") {
+      setTransferPageSizeSelectValue("17")
+    }
+  }, [transfersAutoPageSize, transferPageSizeSelectValue, setTransferPageSizeSelectValue])
+
+  const setTransferPageSizeAndSaveTransfers = React.useCallback(
+    (n: number) => {
+      setTransferPageSizeAndSave(n)
+      setTransfersPage(1)
+    },
+    [setTransferPageSizeAndSave]
+  )
+
+  React.useEffect(() => {
     setPage(1)
   }, [filterNumber, filterComment, filterWarehouse, filterDateFrom, filterDateTo])
+
+  React.useEffect(() => {
+    setTransfersPage(1)
+  }, [transferFilterNumber])
 
   const setPageSizeAndSaveDemands = React.useCallback(
     (n: number) => {
@@ -304,6 +386,30 @@ export function WarehouseMovementsView() {
       })
       .finally(() => {
         if (!cancelled) setLoading(false)
+      })
+    return () => { cancelled = true }
+  }, [activeTab])
+
+  // Загрузка перемещений при открытии вкладки «Перемещения»
+  React.useEffect(() => {
+    if (activeTab !== "transfers") return
+    let cancelled = false
+    setTransfersLoading(true)
+    setTransfersError(null)
+    fetch("/api/1c/warehouse/transfers")
+      .then((res) => {
+        if (!res.ok) return res.json().then((b) => Promise.reject(new Error((b as { error?: string }).error ?? res.statusText)))
+        return res.json()
+      })
+      .then((body: { data?: TransferRow[] }) => {
+        if (cancelled) return
+        setTransfers(Array.isArray(body?.data) ? body.data : [])
+      })
+      .catch((err) => {
+        if (!cancelled) setTransfersError(err instanceof Error ? err.message : "Ошибка загрузки")
+      })
+      .finally(() => {
+        if (!cancelled) setTransfersLoading(false)
       })
     return () => { cancelled = true }
   }, [activeTab])
@@ -527,11 +633,17 @@ export function WarehouseMovementsView() {
                           if (n != null) setPageSizeAndSaveDemands(n)
                         }}
                       >
-                        <SelectTrigger className="w-[90px]">
-                          <SelectValue />
+                        <SelectTrigger className="w-[120px]">
+                          {pageSizeSelectValue === "auto" && autoPageSize > 0 ? (
+                            <span>Авто ({autoPageSize})</span>
+                          ) : (
+                            <SelectValue placeholder="Выберите..." />
+                          )}
                         </SelectTrigger>
                         <SelectContent>
-                          <SelectItem value="auto">Авто</SelectItem>
+                          {autoPageSize > 0 && (
+                            <SelectItem value="auto">Авто ({autoPageSize})</SelectItem>
+                          )}
                           {PAGE_SIZE_PRESETS.map((n) => (
                             <SelectItem key={n} value={String(n)}>
                               {n}
@@ -588,26 +700,335 @@ export function WarehouseMovementsView() {
           </TabsContent>
 
           <TabsContent value="transfers" className="mt-0">
-            <div className="rounded-lg border overflow-hidden">
-              <div className="w-full min-h-[280px] flex items-center justify-center">
-                <Empty className="py-12">
-                  <EmptyHeader>
-                    <EmptyMedia variant="icon">
-                      <IconArrowsExchange className="size-6" />
-                    </EmptyMedia>
-                    <EmptyTitle>Перемещения материалов</EmptyTitle>
-                    <EmptyDescription>
-                      Функционал в разработке. Здесь будут отображаться перемещения материалов между складами
-                    </EmptyDescription>
-                  </EmptyHeader>
-                  <EmptyContent>
-                    <p className="text-xs text-muted-foreground">
-                      API endpoint: <code className="bg-muted px-1 py-0.5 rounded">GET /api/1c/warehouse/transfers</code>
-                    </p>
-                  </EmptyContent>
-                </Empty>
+            <div className="grid min-h-[5rem] grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1.5 rounded-lg border border-border/50 bg-muted/30 p-3 mb-4" style={{ gridTemplateRows: "auto 32px" }}>
+              <Label htmlFor="transfers-filter-number" className="text-xs text-muted-foreground">
+                Номер
+              </Label>
+              <div />
+              <div />
+              <div className="relative w-[160px]">
+                <Input
+                  id="transfers-filter-number"
+                  placeholder="АСК00000556"
+                  value={transferFilterNumber}
+                  onChange={(e) => setTransferFilterNumber(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && setTransfersPage(1)}
+                  className="h-8 pr-7"
+                />
+                {transferFilterNumber ? (
+                  <ClearInputButton onClick={() => setTransferFilterNumber("")} aria-label="Очистить номер" />
+                ) : null}
+              </div>
+              <div />
+              <div className="flex h-8 justify-self-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => { setTransferFilterNumber(""); setTransfersPage(1) }}
+                  className="h-8"
+                >
+                  Сбросить
+                </Button>
               </div>
             </div>
+            <div ref={transfersTableContainerRef} className="rounded-lg border overflow-hidden">
+              {transfersLoading ? (
+                <TableSkeleton columnCount={7} rowCount={Math.max(effectiveTransferPageSize || transfersAutoPageSize || 17, 10)} />
+              ) : transfersError ? (
+                <div className="w-full min-h-[280px] flex items-center justify-center">
+                  <Empty className="py-12">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <IconArrowsExchange className="size-6" />
+                      </EmptyMedia>
+                      <EmptyTitle>Ошибка загрузки</EmptyTitle>
+                      <EmptyDescription>{transfersError}</EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                </div>
+              ) : filteredTransfers.length === 0 ? (
+                <div className="w-full min-h-[280px] flex items-center justify-center">
+                  <Empty className="py-12">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <IconArrowsExchange className="size-6" />
+                      </EmptyMedia>
+                      <EmptyTitle>
+                        {transfers.length === 0 ? "Перемещения" : "Перемещения не найдены"}
+                      </EmptyTitle>
+                      <EmptyDescription>
+                        {transfers.length === 0
+                          ? "Нет данных. Проверьте настройки интеграции 1С."
+                          : "Измените параметры фильтра или сбросьте его."}
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                </div>
+              ) : (
+                <>
+                  <Table className="[&_tbody_td]:h-10 [&_tbody_td]:py-1">
+                    <TableHeader className="bg-muted">
+                      <TableRow>
+                        <TableHead className="w-[120px]">Номер</TableHead>
+                        <TableHead className="w-[100px]">Дата</TableHead>
+                        <TableHead>Склад отправитель</TableHead>
+                        <TableHead>Склад получатель</TableHead>
+                        <TableHead>Ответственный</TableHead>
+                        <TableHead>Комментарий</TableHead>
+                        <TableHead className="w-[120px]">Материалы</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {currentTransfers.map((row, idx) => (
+                        <TableRow
+                          key={`${row.Номер ?? ""}-${row.Дата ?? ""}-${idx}`}
+                          className="hover:bg-muted/50 cursor-pointer"
+                          onClick={() => {
+                            const num = row.Номер ?? ""
+                            if (!num) return
+                            setTransferDetailLoading(true)
+                            setTransferSheetOpen(true)
+                            setSelectedTransferFull(null)
+                            const params = new URLSearchParams()
+                            // 1С в пути ожидает короткий код (165), а не полный номер (АСК00000165)
+                            const digits = (num || "").replace(/\D/g, "")
+                            const codeForApi = digits ? String(Number(digits)) : num
+                            params.set("code", codeForApi)
+                            const datePart = (row.Дата ?? "").trim().split(" ")[0] ?? ""
+                            const [, , yearPart] = datePart.split(".")
+                            const year = yearPart ? String(yearPart).slice(-2) : ""
+                            if (year) params.set("year", year)
+                            params.set("full", "1")
+                            fetch(`/api/1c/warehouse/transfers?${params}`)
+                              .then((res) =>
+                                res.json().then((body: { data?: TransferFull[]; error?: string }) => ({ ok: res.ok, body }))
+                              )
+                              .then(({ ok, body }) => {
+                                if (!ok || !Array.isArray(body?.data)) {
+                                  setSelectedTransferFull(null)
+                                  return
+                                }
+                                setSelectedTransferFull(body.data[0] ?? null)
+                              })
+                              .catch(() => setSelectedTransferFull(null))
+                              .finally(() => setTransferDetailLoading(false))
+                          }}
+                        >
+                          <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
+                            <Button
+                              variant="ghost"
+                              size="sm"
+                              className="h-auto min-h-0 gap-1.5 px-2 py-1 font-normal"
+                              onClick={() => {
+                                const num = row.Номер ?? ""
+                                if (num) {
+                                  void navigator.clipboard.writeText(num)
+                                  toast.success("Номер скопирован")
+                                }
+                              }}
+                            >
+                              <span style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}>
+                                {row.Номер ?? "—"}
+                              </span>
+                              <IconCopy className="h-3.5 w-3.5 shrink-0 opacity-60" />
+                            </Button>
+                          </TableCell>
+                          <TableCell className="text-sm text-muted-foreground">{formatDate(row.Дата)}</TableCell>
+                          <TableCell className="text-sm">{row.СкладОтправитель ?? "—"}</TableCell>
+                          <TableCell className="text-sm">{row.СкладПолучатель ?? "—"}</TableCell>
+                          <TableCell className="text-sm">{row.Ответственный ?? "—"}</TableCell>
+                          <TableCell className="text-sm text-muted-foreground max-w-[200px] truncate" title={row.Комментарий}>
+                            {row.Комментарий ?? "—"}
+                          </TableCell>
+                          <TableCell className="text-sm">{row.Материалы ?? "—"}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                  <div className="flex flex-wrap items-center justify-between gap-4 border-t bg-muted/30 px-4 py-3">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-muted-foreground">Записей на странице:</span>
+                      <Select
+                        value={transferPageSizeSelectValue}
+                        onValueChange={(v) => {
+                          setTransferPageSizeSelectValue(v)
+                          if (v === "auto") {
+                            setTransfersPage(1)
+                            return
+                          }
+                          const n = TRANSFER_PAGE_SIZE_PRESETS.find((p) => String(p) === v)
+                          if (n != null) setTransferPageSizeAndSaveTransfers(n)
+                        }}
+                      >
+                        <SelectTrigger className="w-[120px]">
+                          {transferPageSizeSelectValue === "auto" && transfersAutoPageSize > 0 ? (
+                            <span>Авто ({transfersAutoPageSize})</span>
+                          ) : (
+                            <SelectValue placeholder="Выберите..." />
+                          )}
+                        </SelectTrigger>
+                        <SelectContent>
+                          {transfersAutoPageSize > 0 && (
+                            <SelectItem value="auto">Авто ({transfersAutoPageSize})</SelectItem>
+                          )}
+                          {TRANSFER_PAGE_SIZE_PRESETS.map((n) => (
+                            <SelectItem key={n} value={String(n)}>
+                              {n}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTransfersPage((p) => Math.max(1, p - 1))}
+                        disabled={transfersPage <= 1}
+                      >
+                        <IconChevronLeft className="h-4 w-4" />
+                        Предыдущая
+                      </Button>
+                      <span className="text-sm text-muted-foreground">
+                        Страница {transfersPage} из {totalTransferPages}
+                      </span>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setTransfersPage((p) => Math.min(totalTransferPages, p + 1))}
+                        disabled={transfersPage >= totalTransferPages}
+                      >
+                        Следующая
+                        <IconChevronRight className="h-4 w-4" />
+                      </Button>
+                    </div>
+                  </div>
+                </>
+              )}
+            </div>
+            <Sheet open={transferSheetOpen} onOpenChange={setTransferSheetOpen}>
+              <SheetContent side="right" className="flex flex-col p-0 overflow-hidden" showCloseButton={false}>
+                {/* Заголовок: как в спецификациях — крупно наименование, под ним номер с копированием */}
+                <SheetHeader className="shrink-0 px-6 pr-12 pt-6 pb-4 border-b">
+                  <div className="flex flex-col gap-1">
+                    <SheetTitle className="text-xl font-bold tracking-tight text-foreground">
+                      {transferDetailLoading
+                        ? "Загрузка..."
+                        : selectedTransferFull
+                          ? "Перемещение"
+                          : "Перемещение"}
+                    </SheetTitle>
+                    {selectedTransferFull?.Номер && !transferDetailLoading && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const num = selectedTransferFull.Номер ?? ""
+                          if (num) {
+                            void navigator.clipboard.writeText(num)
+                            toast.success("Номер скопирован")
+                          }
+                        }}
+                        className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group w-fit text-sm font-mono text-muted-foreground"
+                        style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}
+                        title="Копировать номер"
+                      >
+                        <span>{selectedTransferFull.Номер}</span>
+                        <IconCopy className="h-3.5 w-3.5 shrink-0" />
+                      </button>
+                    )}
+                  </div>
+                </SheetHeader>
+
+                {transferDetailLoading ? (
+                  <div className="flex flex-1 flex-col items-center justify-center gap-3 py-16 text-muted-foreground">
+                    <IconLoader className="h-8 w-8 animate-spin" aria-hidden />
+                    <span className="text-sm">Загрузка...</span>
+                  </div>
+                ) : selectedTransferFull ? (
+                  <div className="flex-1 overflow-y-auto">
+                    <div className="px-6 py-6 space-y-6">
+                      {/* Общие сведения — как блок в спецификациях */}
+                      <Card className="py-4">
+                        <CardContent className="pt-0 px-6 pb-0">
+                          <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                            Общие сведения
+                          </p>
+                          <Separator className="my-3" />
+                          <div className="grid grid-cols-2 gap-x-8 gap-y-4">
+                            <div className="space-y-1">
+                              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Дата</p>
+                              <p className="text-sm font-normal">{formatDate(selectedTransferFull.Дата)}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Склад отправитель</p>
+                              <p className="text-sm font-normal">{selectedTransferFull.СкладОтправитель ?? "—"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Склад получатель</p>
+                              <p className="text-sm font-normal">{selectedTransferFull.СкладПолучатель ?? "—"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Ответственный</p>
+                              <p className="text-sm font-normal">{selectedTransferFull.Ответственный ?? "—"}</p>
+                            </div>
+                            {selectedTransferFull.Комментарий ? (
+                              <div className="space-y-1 col-span-2">
+                                <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Комментарий</p>
+                                <p className="text-sm font-normal">{selectedTransferFull.Комментарий}</p>
+                              </div>
+                            ) : null}
+                          </div>
+                        </CardContent>
+                      </Card>
+
+                      {/* Товары — таблица в Card как «Материалы» в спецификациях */}
+                      {selectedTransferFull.Товары && selectedTransferFull.Товары.length > 0 ? (
+                        <Card className="overflow-hidden gap-1.5 py-4">
+                          <CardContent className="pt-0 px-6 pb-0">
+                            <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
+                              Товары
+                              <span className="ml-2 font-normal normal-case text-foreground">
+                                {selectedTransferFull.Товары.length}
+                              </span>
+                            </p>
+                            <Separator className="my-3" />
+                            <div className="max-h-[26rem] overflow-y-auto rounded-lg border bg-muted/20 min-w-0">
+                              <Table>
+                                <TableHeader className="bg-muted/50">
+                                  <TableRow>
+                                    <TableHead className="w-[60px] text-xs">№</TableHead>
+                                    <TableHead className="text-xs">Номенклатура</TableHead>
+                                    <TableHead className="text-xs">Характеристика</TableHead>
+                                    <TableHead className="w-[80px] text-xs">Ед.</TableHead>
+                                    <TableHead className="w-[90px] text-right text-xs">Кол-во</TableHead>
+                                  </TableRow>
+                                </TableHeader>
+                                <TableBody>
+                                  {selectedTransferFull.Товары.map((line, i) => (
+                                    <TableRow key={i}>
+                                      <TableCell className="text-sm py-1.5">{line.НомерСтроки ?? "—"}</TableCell>
+                                      <TableCell className="text-sm py-1.5">{line.Номенклатура ?? "—"}</TableCell>
+                                      <TableCell className="text-sm text-muted-foreground py-1.5">{line.ХарактеристикаНоменклатуры ?? "—"}</TableCell>
+                                      <TableCell className="text-sm py-1.5">{formatUnit(line.ЕдиницаИзмерения) || "—"}</TableCell>
+                                      <TableCell className="text-sm text-right py-1.5">{line.Количество ?? "—"}</TableCell>
+                                    </TableRow>
+                                  ))}
+                                </TableBody>
+                              </Table>
+                            </div>
+                          </CardContent>
+                        </Card>
+                      ) : (
+                        <p className="text-sm text-muted-foreground">Нет позиций в перемещении.</p>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <p className="flex-1 flex items-center justify-center text-sm text-muted-foreground">Не удалось загрузить детали.</p>
+                )}
+              </SheetContent>
+            </Sheet>
           </TabsContent>
         </Tabs>
     </div>

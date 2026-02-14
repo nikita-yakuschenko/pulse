@@ -55,7 +55,7 @@ const ENABLED_URLS = new Set([
   "/docs/specifications",
   "/docs/projects",
   "/warehouse/inventory",
-  "/warehouse/movements",
+  "/warehouse/transfers",
   "/construction/schedule",
 ])
 
@@ -102,7 +102,7 @@ const constructionItems = [
 
 const warehouseItems = [
   { title: "Номенклатура и остатки", url: "/warehouse/inventory", icon: IconBuildingWarehouse },
-  { title: "Движение материалов", url: "/warehouse/movements", icon: IconArrowsExchange },
+  { title: "Движение материалов", url: "/warehouse/transfers", icon: IconArrowsExchange },
 ]
 
 export function AppSidebar({

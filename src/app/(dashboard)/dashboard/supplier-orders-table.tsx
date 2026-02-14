@@ -992,7 +992,7 @@ export function SupplierOrdersTable() {
       }}>
         <SheetContent
           side="right"
-          className="flex flex-col p-0 overflow-hidden !w-[50vw] !max-w-[50vw] border-l"
+          className="flex flex-col p-0 overflow-hidden border-l"
           showCloseButton={false}
         >
           {/* Режим просмотра вложения на весь Sheet */}

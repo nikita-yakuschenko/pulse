@@ -1,7 +1,7 @@
 /**
  * Redis-клиент и кеш для данных приложения (1С и др.).
- * Если REDIS_URL не задан — кеш отключён (get возвращает null, set ничего не делает).
- * При ошибке подключения (ENOTFOUND, ECONNREFUSED) клиент отключается и повтор не выполняется 60 с, чтобы не спамить логами.
+ * Если REDIS_URL не задан — используется in-memory кеш (TTL по ключу), чтобы не ждать 1С при каждом запросе.
+ * При ошибке подключения (ENOTFOUND, ECONNREFUSED) клиент отключается и повтор не выполняется 60 с.
  */
 
 import Redis from "ioredis"
@@ -9,6 +9,10 @@ import Redis from "ioredis"
 let redis: Redis | null = null
 /** После ошибки подключения не создаём новый клиент до этой метки времени (мс). */
 let redisBackoffUntil = 0
+
+/** In-memory кеш при отсутствии Redis (локальная разработка): ключ → { value, expires (ms) }. */
+const memoryCache = new Map<string, { value: string; expires: number }>()
+const MEMORY_CACHE_MAX_ENTRIES = 200
 
 function getRedis(): Redis | null {
   const url = process.env.REDIS_URL
@@ -65,34 +69,59 @@ const DEFAULT_TTL_SEC = 300 // 5 минут
 
 const LOG_PREFIX = "[redis]"
 
-/** Прочитать из кеша (JSON). Возвращает null, если нет или Redis недоступен. */
+/** Прочитать из кеша (JSON). При отсутствии Redis — in-memory кеш. */
 export async function cacheGet<T = unknown>(key: string): Promise<T | null> {
   const client = getRedis()
-  if (!client) return null
+  if (client) {
+    try {
+      const raw = await client.get(key)
+      if (raw == null) return null
+      console.log(`${LOG_PREFIX} hit ${key}`)
+      return JSON.parse(raw) as T
+    } catch {
+      return null
+    }
+  }
+  const entry = memoryCache.get(key)
+  if (!entry || entry.expires < Date.now()) {
+    if (entry) memoryCache.delete(key)
+    return null
+  }
   try {
-    const raw = await client.get(key)
-    if (raw == null) return null
-    console.log(`${LOG_PREFIX} hit ${key}`)
-    return JSON.parse(raw) as T
+    return JSON.parse(entry.value) as T
   } catch {
+    memoryCache.delete(key)
     return null
   }
 }
 
-/** Записать в кеш (JSON). TTL в секундах. */
+/** Записать в кеш (JSON). TTL в секундах. При отсутствии Redis — in-memory. */
 export async function cacheSet(
   key: string,
   value: unknown,
   ttlSeconds: number = DEFAULT_TTL_SEC
 ): Promise<void> {
+  const serialized = JSON.stringify(value)
   const client = getRedis()
-  if (!client) return
-  try {
-    const serialized = JSON.stringify(value)
-    await client.setex(key, ttlSeconds, serialized)
-    console.log(`${LOG_PREFIX} set ${key} ttl=${ttlSeconds}s`)
-  } catch {
-    // игнорируем ошибки записи
+  if (client) {
+    try {
+      await client.setex(key, ttlSeconds, serialized)
+      console.log(`${LOG_PREFIX} set ${key} ttl=${ttlSeconds}s`)
+    } catch {
+      // игнорируем ошибки записи
+    }
+    return
   }
+  if (memoryCache.size >= MEMORY_CACHE_MAX_ENTRIES) {
+    const now = Date.now()
+    for (const [k, v] of memoryCache) {
+      if (v.expires < now) memoryCache.delete(k)
+    }
+    if (memoryCache.size >= MEMORY_CACHE_MAX_ENTRIES) {
+      const first = memoryCache.keys().next().value
+      if (first) memoryCache.delete(first)
+    }
+  }
+  memoryCache.set(key, { value: serialized, expires: Date.now() + ttlSeconds * 1000 })
 }
 

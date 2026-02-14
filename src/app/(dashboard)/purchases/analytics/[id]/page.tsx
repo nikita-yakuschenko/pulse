@@ -504,7 +504,7 @@ export default function MrpReportDetailsPage() {
       )}
 
       <Sheet open={sheetOpen} onOpenChange={(open) => { setSheetOpen(open); if (!open) setSelectedMaterial(null) }}>
-        <SheetContent side="right" className="flex flex-col p-0 overflow-hidden !w-[50vw] !max-w-[50vw] border-l">
+        <SheetContent side="right" className="flex flex-col p-0 overflow-hidden border-l">
           <SheetHeader className="shrink-0 px-6 pr-12 pt-6 pb-4 border-b bg-muted/30">
             <div className="flex flex-col gap-1">
               {selectedMaterial && (

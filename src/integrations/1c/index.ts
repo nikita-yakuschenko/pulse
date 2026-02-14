@@ -522,5 +522,83 @@ export async function getDemandByCode(userMetadata: Record<string, unknown>, cod
   return await client.get<DemandItem>(`demands/get/code/${encodeURIComponent(encoded)}`)
 }
 
+/**
+ * Перемещения товаров между складами. API 1С: transfers/get/list | transfers/get/code/{code} | transfers/get/code/{code}/full/1
+ */
+export type TransferItem = {
+  Номер?: string
+  Дата?: string
+  СкладОтправитель?: string
+  СкладПолучатель?: string
+  Ответственный?: string
+  Комментарий?: string
+  Материалы?: string
+  [key: string]: unknown
+}
+
+export type TransferGoodsRow = {
+  НомерСтроки?: string
+  Номенклатура?: string
+  ХарактеристикаНоменклатуры?: string
+  ЕдиницаИзмерения?: string
+  Количество?: number
+}
+
+export type TransferFull = TransferItem & {
+  Товары?: TransferGoodsRow[]
+}
+
+export type TransfersListResponse = TransferItem[]
+export type TransfersFullResponse = { data: TransferFull[]; errors: string[] }
+
+export async function getTransfersList(
+  userMetadata: Record<string, unknown>,
+  filters?: { code?: string }
+): Promise<TransferItem[]> {
+  const credentials = await getOneCCredentials(userMetadata)
+  if (!credentials) throw new Error("1С не настроена")
+  const client = createOneCClient(credentials)
+  const code = filters?.code?.trim()
+  const endpoint = code
+    ? `transfers/get/code/${encodeURIComponent(code.replaceAll("+", "_plus_").replaceAll("-", "_dash_"))}`
+    : "transfers/get/list"
+  const raw = await client.get<TransfersListResponse | unknown>(endpoint)
+  return Array.isArray(raw) ? raw : []
+}
+
+export async function getTransferByCodeFull(
+  userMetadata: Record<string, unknown>,
+  code: string,
+  year?: string
+): Promise<TransfersFullResponse> {
+  const credentials = await getOneCCredentials(userMetadata)
+  if (!credentials) throw new Error("1С не настроена")
+  const client = createOneCClient(credentials)
+  const encoded = code
+    .trim()
+    .replaceAll("+", "_plus_")
+    .replaceAll("-", "_dash_")
+  // Как в заказах поставщика: при year вызываем 1С с путём .../year/{year}/full/1; иначе — code/full/1 и выбираем по году у нас
+  const pathYear = year?.trim() ? `/year/${encodeURIComponent(year)}` : ""
+  const raw = await client.get<TransfersFullResponse>(`transfers/get/code/${encodeURIComponent(encoded)}${pathYear}/full/1`)
+  if (!raw || typeof raw !== "object" || !("data" in raw) || !Array.isArray((raw as TransfersFullResponse).data)) {
+    return { data: [], errors: [] }
+  }
+  const resp = raw as TransfersFullResponse
+  if (!year?.trim()) return resp
+  // Искомый год: параметр year уже в коротком виде (26), не прогоняем через yearNorm — иначе yearNorm("26") даёт ""
+  const need = String(year).trim().slice(-2)
+  // Год из даты в ответе 1С: dd.MM.yyyy или ISO
+  const yearFromDate = (s: string) => {
+    const t = String(s ?? "").trim()
+    const fourDigit = t.match(/\d{4}/)?.[0]
+    if (fourDigit) return String(fourDigit).slice(-2)
+    const y = t.split(".")[2] ?? ""
+    return y.length === 2 ? y : String(y).slice(-2)
+  }
+  const found = resp.data.filter((row: { Дата?: string }) => yearFromDate(row.Дата ?? "") === need)
+  return { data: found.length ? [found[0]] : [], errors: resp.errors ?? [] }
+}
+
 export * from "@/lib/1c-client"
 

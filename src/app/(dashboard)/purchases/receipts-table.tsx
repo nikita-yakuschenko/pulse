@@ -473,7 +473,7 @@ export function ReceiptsTable() {
       <div ref={tableContainerRef} className="flex flex-col gap-3">
         {loading ? (
           <div className="overflow-hidden rounded-lg border">
-            <TableSkeleton columnCount={5} rowCount={Math.max(effectivePageSize || autoPageSize, 10)} />
+            <TableSkeleton columnCount={5} rowCount={Math.max(effectivePageSize || autoPageSize || 17, 10)} />
           </div>
         ) : (
           <>
@@ -538,9 +538,10 @@ export function ReceiptsTable() {
               </Table>
             </div>
 
-            {/* Пагинация — как в заказах поставщикам */}
-            <div className="flex items-center justify-between">
+            {/* Подвал таблицы — как в требованиях и перемещениях: визуальная консистентность */}
+            <div className="flex flex-wrap items-center justify-between gap-4 border-t bg-muted/30 px-4 py-3">
               <div className="flex items-center gap-2">
+                <span className="text-sm text-muted-foreground">Записей на странице:</span>
                 <Select
                   value={pageSizeSelectValue}
                   onValueChange={(value) => {
@@ -556,7 +557,7 @@ export function ReceiptsTable() {
                     setPageSizeAndSave(Number(value))
                   }}
                 >
-                  <SelectTrigger size="sm" className="h-8 w-[120px]">
+                  <SelectTrigger className="w-[120px]">
                     {pageSizeSelectValue === "auto" && autoPageSize > 0 ? (
                       <span>Авто ({autoPageSize})</span>
                     ) : (
@@ -567,12 +568,14 @@ export function ReceiptsTable() {
                     {autoPageSize > 0 && (
                       <SelectItem value="auto">Авто ({autoPageSize})</SelectItem>
                     )}
-                    <SelectItem value="17">17</SelectItem>
-                    <SelectItem value="20">20</SelectItem>
-                    <SelectItem value="50">50</SelectItem>
-                    <SelectItem value="100">100</SelectItem>
-                    <SelectItem value="200">200</SelectItem>
-                    <SelectItem value="custom">Своё...</SelectItem>
+                    {(PAGE_SIZE_PRESETS as number[]).map((n) => (
+                      <SelectItem key={n} value={String(n)}>
+                        {n}
+                      </SelectItem>
+                    ))}
+                    {pageSizeSelectValue === "custom" && !(PAGE_SIZE_PRESETS as number[]).includes(pageSize) && (
+                      <SelectItem value="custom">Своё ({pageSize})</SelectItem>
+                    )}
                   </SelectContent>
                 </Select>
                 {pageSizeSelectValue === "custom" && (
@@ -588,7 +591,6 @@ export function ReceiptsTable() {
                     className="h-8 w-[72px]"
                   />
                 )}
-                <span className="text-sm text-muted-foreground">записей на странице</span>
               </div>
               <div className="flex items-center gap-2">
                 <Button
