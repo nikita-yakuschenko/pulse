@@ -709,7 +709,7 @@ export function PaymentsTable() {
       <div ref={tableContainerRef} className="flex flex-col gap-3">
       {loading ? (
         <div className="overflow-hidden rounded-lg border">
-          <TableSkeleton columnCount={7} rowCount={10} />
+          <TableSkeleton columnCount={7} rowCount={Math.max(effectivePageSize || autoPageSize, 10)} />
         </div>
       ) : (
         <>
