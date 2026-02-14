@@ -33,33 +33,12 @@ import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
 import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preference"
 import { IconChevronLeft, IconChevronRight, IconCopy, IconLoader, IconSearch, IconX } from "@tabler/icons-react"
 import { formatDate } from "@/lib/utils"
+import { parseDate as parseIsoDate } from "@internationalized/date"
+import { JollyDateRangePicker } from "@/components/ui/date-range-picker"
 
 // Ответ 1С — массив объектов, структура может отличаться
 type SpecificationRecord = Record<string, unknown>
 
-const YEAR_PLACEHOLDER = "__all__"
-const MONTH_PLACEHOLDER = "__all__"
-
-const YEAR_OPTIONS = (() => {
-  const current = new Date().getFullYear()
-  const minYear = 2023
-  return Array.from({ length: current - minYear + 1 }, (_, i) => current - i)
-})()
-
-const MONTH_OPTIONS: { value: string; label: string }[] = [
-  { value: "1", label: "Январь" },
-  { value: "2", label: "Февраль" },
-  { value: "3", label: "Март" },
-  { value: "4", label: "Апрель" },
-  { value: "5", label: "Май" },
-  { value: "6", label: "Июнь" },
-  { value: "7", label: "Июль" },
-  { value: "8", label: "Август" },
-  { value: "9", label: "Сентябрь" },
-  { value: "10", label: "Октябрь" },
-  { value: "11", label: "Ноябрь" },
-  { value: "12", label: "Декабрь" },
-]
 
 function ClearInputButton({
   onClick,
@@ -86,8 +65,8 @@ export default function SpecificationsPage() {
   const [filterName, setFilterName] = useState("")
   const [filterCode, setFilterCode] = useState("")
   const [filterMaterial, setFilterMaterial] = useState("")
-  const [filterYear, setFilterYear] = useState("")
-  const [filterMonth, setFilterMonth] = useState("")
+  const [filterDateFrom, setFilterDateFrom] = useState("")
+  const [filterDateTo, setFilterDateTo] = useState("")
   const [detailOpen, setDetailOpen] = useState(false)
   const [detailItem, setDetailItem] = useState<SpecificationRecord | null>(null)
   const [detailLoading, setDetailLoading] = useState(false)
@@ -120,22 +99,22 @@ export default function SpecificationsPage() {
       name?: string
       code?: string
       material?: string
-      year?: string
-      month?: string
+      dateFrom?: string
+      dateTo?: string
     }) => {
       setLoading(true)
       try {
         const name = overrides?.name ?? filterName
         const code = overrides?.code ?? filterCode
         const material = overrides?.material ?? filterMaterial
-        const year = overrides?.year ?? filterYear
-        const month = overrides?.month ?? filterMonth
+        const dateFrom = overrides?.dateFrom ?? filterDateFrom
+        const dateTo = overrides?.dateTo ?? filterDateTo
+        const year = dateFrom?.slice(0, 4) || ""
         const params = new URLSearchParams()
         if (name.trim()) params.set("name", name.trim())
         if (code.trim()) params.set("code", code.trim())
         if (material.trim()) params.set("material", material.trim())
-        if (year.trim()) params.set("year", year.trim())
-        if (month.trim()) params.set("month", month.trim())
+        if (year) params.set("year", year)
         const url = `/api/1c/specifications${params.toString() ? `?${params}` : ""}`
         const res = await fetch(url)
         const json = await res.json()
@@ -146,15 +125,23 @@ export default function SpecificationsPage() {
         }
         const data = json.data
         const rawList = Array.isArray(data) ? data : []
-        // Клиентская фильтрация по наименованию: 1С может вернуть лишние строки — оставляем только с вхождением подстроки
         const nameFilter = name.trim().toLowerCase()
-        const filtered =
+        let filtered =
           nameFilter.length > 0
             ? rawList.filter((row: SpecificationRecord) =>
                 String(row.Наименование ?? "").toLowerCase().includes(nameFilter)
               )
             : rawList
-        // Сортировка для отображения: всегда по дате утверждения, от новых к старым
+        const fromTs = dateFrom ? new Date(dateFrom).getTime() : 0
+        const toTsEnd = dateTo ? new Date(dateTo).getTime() + 24 * 60 * 60 * 1000 - 1 : 0
+        if (fromTs > 0 || toTsEnd > 0) {
+          filtered = filtered.filter((row: SpecificationRecord) => {
+            const ts = parseSpecDate(row.ДатаУтверждения)
+            if (fromTs > 0 && ts < fromTs) return false
+            if (toTsEnd > 0 && ts > toTsEnd) return false
+            return true
+          })
+        }
         const sorted = [...filtered].sort((a, b) => {
           const dateA = parseSpecDate(a.ДатаУтверждения)
           const dateB = parseSpecDate(b.ДатаУтверждения)
@@ -169,7 +156,7 @@ export default function SpecificationsPage() {
         setLoading(false)
       }
     },
-    [filterName, filterCode, filterMaterial, filterYear, filterMonth]
+    [filterName, filterCode, filterMaterial, filterDateFrom, filterDateTo]
   )
 
   useEffect(() => {
@@ -185,7 +172,7 @@ export default function SpecificationsPage() {
     }
     const t = setTimeout(() => loadList(), 500)
     return () => clearTimeout(t)
-  }, [filterName, filterCode, filterMaterial, filterYear, filterMonth, loadList])
+  }, [filterName, filterCode, filterMaterial, filterDateFrom, filterDateTo, loadList])
 
   const handleApplyFilters = useCallback(() => {
     loadList()
@@ -228,14 +215,14 @@ export default function SpecificationsPage() {
     setFilterName("")
     setFilterCode("")
     setFilterMaterial("")
-    setFilterYear("")
-    setFilterMonth("")
+    setFilterDateFrom("")
+    setFilterDateTo("")
     loadList({
       name: "",
       code: "",
       material: "",
-      year: "",
-      month: "",
+      dateFrom: "",
+      dateTo: "",
     })
   }, [loadList])
 
@@ -339,43 +326,31 @@ export default function SpecificationsPage() {
             ) : null}
           </div>
         </div>
-        <div className="lg:col-span-1">
-          <Label className="text-xs text-muted-foreground">Год</Label>
-          <Select
-            value={filterYear || YEAR_PLACEHOLDER}
-            onValueChange={(v) => setFilterYear(v === YEAR_PLACEHOLDER ? "" : v)}
-          >
-            <SelectTrigger size="sm" className="mt-1 h-8 w-full">
-              <SelectValue placeholder="Все" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={YEAR_PLACEHOLDER}>Все</SelectItem>
-              {YEAR_OPTIONS.map((y) => (
-                <SelectItem key={y} value={String(y)}>
-                  {y}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-        <div className="lg:col-span-1">
-          <Label className="text-xs text-muted-foreground">Месяц</Label>
-          <Select
-            value={filterMonth || MONTH_PLACEHOLDER}
-            onValueChange={(v) => setFilterMonth(v === MONTH_PLACEHOLDER ? "" : v)}
-          >
-            <SelectTrigger size="sm" className="mt-1 h-8 w-full">
-              <SelectValue placeholder="Все" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value={MONTH_PLACEHOLDER}>Все</SelectItem>
-              {MONTH_OPTIONS.map((m) => (
-                <SelectItem key={m.value} value={m.value}>
-                  {m.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+        <div className="lg:col-span-2 min-w-[280px]">
+          <JollyDateRangePicker
+            label="Год, период"
+            fieldGroupVariant="filter"
+            className="w-full min-w-0"
+            value={
+              filterDateFrom || filterDateTo
+                ? {
+                    start: filterDateFrom ? parseIsoDate(filterDateFrom) : parseIsoDate(filterDateTo!),
+                    end: filterDateTo ? parseIsoDate(filterDateTo) : parseIsoDate(filterDateFrom!),
+                  }
+                : null
+            }
+            onChange={(range) => {
+              if (!range) {
+                setFilterDateFrom("")
+                setFilterDateTo("")
+                return
+              }
+              const fmt = (d: { year: number; month: number; day: number }) =>
+                `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`
+              setFilterDateFrom(fmt(range.start))
+              setFilterDateTo(fmt(range.end))
+            }}
+          />
         </div>
         <div className="flex items-end gap-2 lg:col-span-1">
           <Button size="sm" onClick={handleApplyFilters} className="h-8 gap-1">

@@ -46,6 +46,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import dynamic from "next/dynamic"
 import { cn, formatDate } from "@/lib/utils"
+import { parseDate as parseIsoDate } from "@internationalized/date"
+import { JollyDateRangePicker } from "@/components/ui/date-range-picker"
 import { TableSkeleton } from "@/components/ui/table-skeleton"
 import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
 import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preference"
@@ -59,12 +61,14 @@ const PdfViewer = dynamic(
 )
 
 /**
- * Парсит дату из формата "09.06.2023 10:59:09" в Date
+ * Парсит дату из формата "09.06.2023 10:59:09" или "09.06.2023" в Date
  */
 function parseDate(dateStr: string): Date {
-  const [datePart, timePart] = dateStr.split(" ")
-  const [day, month, year] = datePart.split(".").map(Number)
-  const [hours, minutes, seconds] = timePart.split(":").map(Number)
+  if (!dateStr?.trim()) return new Date(0)
+  const [datePart, timePart] = dateStr.trim().split(" ")
+  const parts = (datePart || "").split(".")
+  const [day = 0, month = 1, year = 0] = parts.map(Number)
+  const [hours = 0, minutes = 0, seconds = 0] = (timePart || "0:0:0").split(":").map(Number)
   return new Date(year, month - 1, day, hours, minutes, seconds)
 }
 
@@ -72,9 +76,16 @@ function parseDate(dateStr: string): Date {
  * Извлекает год из даты в формате "09.06.2023 10:59:09" → "23"
  */
 function extractYear(dateStr: string): string {
-  const [datePart] = dateStr.split(" ")
-  const [, , year] = datePart.split(".")
-  return year.slice(-2)
+  if (!dateStr?.trim()) return ""
+  const [datePart] = dateStr.trim().split(" ")
+  const parts = (datePart || "").split(".")
+  const year = parts[2] ?? ""
+  return String(year).slice(-2)
+}
+
+function parseDateToTime(dateStr: string | undefined): number {
+  if (!dateStr?.trim()) return 0
+  return parseDate(dateStr).getTime()
 }
 
 /**
@@ -270,7 +281,8 @@ export function PaymentsTable() {
   // Фильтры для API (серверная фильтрация)
   const [filterCode, setFilterCode] = useState("")
   const [filterContractor, setFilterContractor] = useState("")
-  const [filterYear, setFilterYear] = useState("")
+  const [filterDateFrom, setFilterDateFrom] = useState("")
+  const [filterDateTo, setFilterDateTo] = useState("")
   const [filterStatus, setFilterStatus] = useState("")
 
   // Фильтры для клиентской фильтрации
@@ -324,19 +336,20 @@ export function PaymentsTable() {
   type PaymentsFilters = {
     code: string
     contractor: string
-    year: string
+    dateFrom: string
+    dateTo: string
     org: string
     responsible: string
     status: string
   }
 
-  // Загрузка данных (как в Заказах поставщикам: текстовые фильтры code/contractor применяются вручную — Enter или выбор из dropdown)
   const loadPayments = useCallback(async (overrides?: Partial<PaymentsFilters>) => {
     setLoading(true)
     try {
       const code = overrides?.code ?? filterCode
       const contractor = overrides?.contractor ?? filterContractor
-      const year = overrides?.year ?? filterYear
+      const dateFrom = overrides?.dateFrom ?? filterDateFrom
+      const dateTo = overrides?.dateTo ?? filterDateTo
       const org = overrides?.org ?? filterOrganization
       const responsible = overrides?.responsible ?? filterResponsible
       const status = overrides?.status ?? filterStatus
@@ -356,10 +369,15 @@ export function PaymentsTable() {
       const data = await response.json()
 
       let paymentsData: Payment[] = data.data || []
-
-      // Клиентская фильтрация по году (API не поддерживает)
-      if (year.trim()) {
-        paymentsData = paymentsData.filter((p) => extractYear(p.Дата) === year.trim())
+      const fromTs = parseDateToTime(dateFrom || undefined)
+      const toTsEnd = dateTo ? parseDateToTime(dateTo) + 24 * 60 * 60 * 1000 - 1 : 0
+      if (fromTs > 0 || toTsEnd > 0) {
+        paymentsData = paymentsData.filter((p) => {
+          const ts = parseDateToTime(p.Дата)
+          if (fromTs > 0 && ts < fromTs) return false
+          if (toTsEnd > 0 && ts > toTsEnd) return false
+          return true
+        })
       }
 
       setPayments(paymentsData)
@@ -371,7 +389,7 @@ export function PaymentsTable() {
     } finally {
       setLoading(false)
     }
-  }, [filterCode, filterContractor, filterYear, filterOrganization, filterResponsible, filterStatus])
+  }, [filterCode, filterContractor, filterDateFrom, filterDateTo, filterOrganization, filterResponsible, filterStatus])
 
   // Первоначальная загрузка — загружаем все данные для сбора опций dropdown-ов
   useEffect(() => {
@@ -404,7 +422,7 @@ export function PaymentsTable() {
   useEffect(() => {
     if (!isInitialLoadDone.current) return
     loadPayments()
-  }, [filterYear, filterOrganization, filterResponsible, filterStatus]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterDateFrom, filterDateTo, filterOrganization, filterResponsible, filterStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // При каждой загрузке дополняем накопленные опции (как в Заказах поставщикам)
   useEffect(() => {
@@ -429,10 +447,6 @@ export function PaymentsTable() {
   )
   const uniqueResponsibles = useMemo(
     () => Array.from(optionsAccumulator.current.resps).sort(),
-    [payments]
-  )
-  const uniqueYears = useMemo(
-    () => Array.from(optionsAccumulator.current.years).sort().reverse(),
     [payments]
   )
   const uniqueStatuses = useMemo(
@@ -478,12 +492,13 @@ export function PaymentsTable() {
   const handleResetFilters = useCallback(() => {
     setFilterCode("")
     setFilterContractor("")
-    setFilterYear("")
+    setFilterDateFrom("")
+    setFilterDateTo("")
     setFilterOrganization("")
     setFilterResponsible("")
     setFilterStatus("")
     setPage(1)
-    loadPayments({ code: "", contractor: "", year: "", org: "", responsible: "", status: "" })
+    loadPayments({ code: "", contractor: "", dateFrom: "", dateTo: "", org: "", responsible: "", status: "" })
   }, [loadPayments])
 
   // Применение текстовых фильтров (Номер, Поставщик) — по Enter или выбору из dropdown
@@ -535,7 +550,7 @@ export function PaymentsTable() {
         <Label htmlFor="filter-contractor" className="text-xs text-muted-foreground">
           Поставщик
         </Label>
-        <Label className="text-xs text-muted-foreground">Год</Label>
+        <Label className="text-xs text-muted-foreground">Год, период</Label>
         <Label className="text-xs text-muted-foreground">Организация</Label>
         <Label className="text-xs text-muted-foreground">Ответственный</Label>
         <Label className="text-xs text-muted-foreground">Статус</Label>
@@ -620,23 +635,31 @@ export function PaymentsTable() {
             </div>
           )}
         </div>
-        <div className="flex h-8 items-center gap-1">
-          <Select value={filterYear || "all"} onValueChange={(value) => setFilterYear(value === "all" ? "" : value)}>
-            <SelectTrigger size="sm" className="h-8 w-[100px]">
-              <SelectValue placeholder="Все" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Все</SelectItem>
-              {uniqueYears.map((year) => (
-                <SelectItem key={year} value={year}>
-                  20{year}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {filterYear ? (
-            <ClearFilterButton onClick={() => setFilterYear("")} aria-label="Сбросить год" />
-          ) : null}
+        <div className="w-[280px] min-w-[280px]">
+          <JollyDateRangePicker
+            label=""
+            fieldGroupVariant="filter"
+            className="w-full min-w-0"
+            value={
+              filterDateFrom || filterDateTo
+                ? {
+                    start: filterDateFrom ? parseIsoDate(filterDateFrom) : parseIsoDate(filterDateTo!),
+                    end: filterDateTo ? parseIsoDate(filterDateTo) : parseIsoDate(filterDateFrom!),
+                  }
+                : null
+            }
+            onChange={(range) => {
+              if (!range) {
+                setFilterDateFrom("")
+                setFilterDateTo("")
+                return
+              }
+              const fmt = (d: { year: number; month: number; day: number }) =>
+                `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`
+              setFilterDateFrom(fmt(range.start))
+              setFilterDateTo(fmt(range.end))
+            }}
+          />
         </div>
         <div className="flex h-8 items-center gap-1">
           <Select value={filterOrganization || "all"} onValueChange={(value) => setFilterOrganization(value === "all" ? "" : value)}>

@@ -491,5 +491,36 @@ export async function getReceipts(userMetadata: Record<string, unknown>, filters
   return await client.get(endpoint)
 }
 
+/**
+ * Требования-накладные (реализации). API 1С: demands/get/list | demands/get/code/{code}
+ */
+export type DemandItem = {
+  Номер?: string
+  Дата?: string
+  Склад?: string
+  Ответственный?: string
+  Комментарий?: string
+  Материалы?: string
+  [key: string]: unknown
+}
+
+export async function getDemandsList(userMetadata: Record<string, unknown>): Promise<DemandItem[]> {
+  const credentials = await getOneCCredentials(userMetadata)
+  if (!credentials) throw new Error("1С не настроена")
+  const client = createOneCClient(credentials)
+  const raw = await client.get<DemandItem[] | unknown>("demands/get/list")
+  return Array.isArray(raw) ? raw : []
+}
+
+export async function getDemandByCode(userMetadata: Record<string, unknown>, code: string): Promise<DemandItem | unknown> {
+  const credentials = await getOneCCredentials(userMetadata)
+  if (!credentials) throw new Error("1С не настроена")
+  const client = createOneCClient(credentials)
+  const encoded = code
+    .replaceAll("+", "_plus_")
+    .replaceAll("-", "_dash_")
+  return await client.get<DemandItem>(`demands/get/code/${encodeURIComponent(encoded)}`)
+}
+
 export * from "@/lib/1c-client"
 
