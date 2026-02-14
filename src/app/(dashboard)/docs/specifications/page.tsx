@@ -72,6 +72,41 @@ export default function SpecificationsPage() {
   const [detailLoading, setDetailLoading] = useState(false)
   const [detailData, setDetailData] = useState<SpecificationRecord | null>(null)
 
+  const FILTERS_STORAGE_KEY = "pulse:filters:specifications"
+  useEffect(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(FILTERS_STORAGE_KEY) : null
+      if (!raw) return
+      const saved = JSON.parse(raw) as Record<string, unknown>
+      if (saved && typeof saved === "object") {
+        if (typeof saved.name === "string") setFilterName(saved.name)
+        if (typeof saved.code === "string") setFilterCode(saved.code)
+        if (typeof saved.material === "string") setFilterMaterial(saved.material)
+        if (typeof saved.dateFrom === "string") setFilterDateFrom(saved.dateFrom)
+        if (typeof saved.dateTo === "string") setFilterDateTo(saved.dateTo)
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return
+      localStorage.setItem(
+        FILTERS_STORAGE_KEY,
+        JSON.stringify({
+          name: filterName,
+          code: filterCode,
+          material: filterMaterial,
+          dateFrom: filterDateFrom,
+          dateTo: filterDateTo,
+        })
+      )
+    } catch {
+      // ignore
+    }
+  }, [filterName, filterCode, filterMaterial, filterDateFrom, filterDateTo])
+
   // Пагинация — настройки привязаны к пользователю (все устройства)
   const [page, setPage] = useState(1)
   const {

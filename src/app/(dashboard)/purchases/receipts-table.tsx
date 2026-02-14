@@ -38,6 +38,7 @@ import { parseDate as parseIsoDate } from "@internationalized/date"
 import { JollyDateRangePicker } from "@/components/ui/date-range-picker"
 
 const DEBOUNCE_MS = 500
+const FILTERS_STORAGE_KEY = "pulse:filters:receipts"
 
 function ClearInputButton({ onClick, "aria-label": ariaLabel = "Сбросить" }: { onClick: () => void; "aria-label"?: string }) {
   return (
@@ -121,6 +122,44 @@ export function ReceiptsTable() {
 
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const isInitialLoadDone = useRef(false)
+
+  useEffect(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(FILTERS_STORAGE_KEY) : null
+      if (!raw) return
+      const saved = JSON.parse(raw) as Record<string, unknown>
+      if (saved && typeof saved === "object") {
+        if (typeof saved.code === "string") setFilterCode(saved.code)
+        if (typeof saved.dateFrom === "string") setFilterDateFrom(saved.dateFrom)
+        if (typeof saved.dateTo === "string") setFilterDateTo(saved.dateTo)
+        if (typeof saved.contractor === "string") setFilterContractor(saved.contractor)
+        if (typeof saved.org === "string") setFilterOrg(saved.org)
+        if (typeof saved.material === "string") setFilterMaterial(saved.material)
+        if (typeof saved.full === "boolean") setFilterFull(saved.full)
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return
+      localStorage.setItem(
+        FILTERS_STORAGE_KEY,
+        JSON.stringify({
+          code: filterCode,
+          dateFrom: filterDateFrom,
+          dateTo: filterDateTo,
+          contractor: filterContractor,
+          org: filterOrg,
+          material: filterMaterial,
+          full: filterFull,
+        })
+      )
+    } catch {
+      // ignore
+    }
+  }, [filterCode, filterDateFrom, filterDateTo, filterContractor, filterOrg, filterMaterial, filterFull])
 
   const {
     pageSize,

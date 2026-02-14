@@ -74,6 +74,7 @@ function ClearFilterButton({ onClick, "aria-label": ariaLabel = "Сбросит�
 }
 
 const TAB_PREFERENCE_KEY = "warehouse-movements-tab"
+const FILTERS_STORAGE_KEY = "pulse:filters:warehouse-requirements"
 
 type DemandRow = {
   Номер?: string
@@ -96,6 +97,42 @@ export function WarehouseMovementsView() {
   const [filterDateFrom, setFilterDateFrom] = React.useState("")
   const [filterDateTo, setFilterDateTo] = React.useState("")
   const [page, setPage] = React.useState(1)
+
+  // Восстановление фильтров из localStorage при монтировании
+  React.useEffect(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(FILTERS_STORAGE_KEY) : null
+      if (!raw) return
+      const saved = JSON.parse(raw) as Record<string, unknown>
+      if (saved && typeof saved === "object") {
+        if (typeof saved.number === "string") setFilterNumber(saved.number)
+        if (typeof saved.comment === "string") setFilterComment(saved.comment)
+        if (typeof saved.warehouse === "string") setFilterWarehouse(saved.warehouse)
+        if (typeof saved.dateFrom === "string") setFilterDateFrom(saved.dateFrom)
+        if (typeof saved.dateTo === "string") setFilterDateTo(saved.dateTo)
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+  // Сохранение фильтров в localStorage при изменении
+  React.useEffect(() => {
+    try {
+      if (typeof window === "undefined") return
+      localStorage.setItem(
+        FILTERS_STORAGE_KEY,
+        JSON.stringify({
+          number: filterNumber,
+          comment: filterComment,
+          warehouse: filterWarehouse,
+          dateFrom: filterDateFrom,
+          dateTo: filterDateTo,
+        })
+      )
+    } catch {
+      // ignore
+    }
+  }, [filterNumber, filterComment, filterWarehouse, filterDateFrom, filterDateTo])
 
   const uniqueWarehouses = React.useMemo(
     () =>
