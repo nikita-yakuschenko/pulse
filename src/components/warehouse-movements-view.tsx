@@ -313,7 +313,7 @@ export function WarehouseMovementsView() {
                   value={filterWarehouse || "__all__"}
                   onValueChange={(v) => setFilterWarehouse(v === "__all__" ? "" : v)}
                 >
-                  <SelectTrigger size="sm" className="h-8 w-[180px]">
+                  <SelectTrigger size="sm" className="h-8 min-w-[200px] w-[260px]">
                     <SelectValue placeholder="Все" />
                   </SelectTrigger>
                   <SelectContent>
