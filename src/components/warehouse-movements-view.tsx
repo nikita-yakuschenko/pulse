@@ -76,6 +76,49 @@ function ClearFilterButton({ onClick, "aria-label": ariaLabel = "Сбросит�
 const TAB_PREFERENCE_KEY = "warehouse-movements-tab"
 const FILTERS_STORAGE_KEY = "pulse:filters:warehouse-requirements"
 
+// Один раз читаем сохранённые фильтры для инициализации state (избегаем гонки с эффектом сохранения)
+let cachedInitialWarehouseFilters: {
+  number: string
+  comment: string
+  warehouse: string
+  dateFrom: string
+  dateTo: string
+} | null = null
+function getInitialWarehouseFilters(): {
+  number: string
+  comment: string
+  warehouse: string
+  dateFrom: string
+  dateTo: string
+} {
+  if (cachedInitialWarehouseFilters) return cachedInitialWarehouseFilters
+  if (typeof window === "undefined")
+    return { number: "", comment: "", warehouse: "", dateFrom: "", dateTo: "" }
+  try {
+    const raw = localStorage.getItem(FILTERS_STORAGE_KEY)
+    if (!raw) {
+      cachedInitialWarehouseFilters = { number: "", comment: "", warehouse: "", dateFrom: "", dateTo: "" }
+      return cachedInitialWarehouseFilters
+    }
+    const saved = JSON.parse(raw) as Record<string, unknown>
+    if (!saved || typeof saved !== "object") {
+      cachedInitialWarehouseFilters = { number: "", comment: "", warehouse: "", dateFrom: "", dateTo: "" }
+      return cachedInitialWarehouseFilters
+    }
+    cachedInitialWarehouseFilters = {
+      number: typeof saved.number === "string" ? saved.number : "",
+      comment: typeof saved.comment === "string" ? saved.comment : "",
+      warehouse: typeof saved.warehouse === "string" ? saved.warehouse : "",
+      dateFrom: typeof saved.dateFrom === "string" ? saved.dateFrom : "",
+      dateTo: typeof saved.dateTo === "string" ? saved.dateTo : "",
+    }
+    return cachedInitialWarehouseFilters
+  } catch {
+    cachedInitialWarehouseFilters = { number: "", comment: "", warehouse: "", dateFrom: "", dateTo: "" }
+    return cachedInitialWarehouseFilters
+  }
+}
+
 type DemandRow = {
   Номер?: string
   Дата?: string
@@ -91,30 +134,16 @@ export function WarehouseMovementsView() {
   const [loading, setLoading] = React.useState(false)
   const [demands, setDemands] = React.useState<DemandRow[]>([])
   const [demandsError, setDemandsError] = React.useState<string | null>(null)
-  const [filterNumber, setFilterNumber] = React.useState("")
-  const [filterComment, setFilterComment] = React.useState("")
-  const [filterWarehouse, setFilterWarehouse] = React.useState("")
-  const [filterDateFrom, setFilterDateFrom] = React.useState("")
-  const [filterDateTo, setFilterDateTo] = React.useState("")
+  const [filterNumber, setFilterNumber] = React.useState(() => getInitialWarehouseFilters().number)
+  const [filterComment, setFilterComment] = React.useState(() => getInitialWarehouseFilters().comment)
+  const [filterWarehouse, setFilterWarehouse] = React.useState(() => getInitialWarehouseFilters().warehouse)
+  const [filterDateFrom, setFilterDateFrom] = React.useState(() => getInitialWarehouseFilters().dateFrom)
+  const [filterDateTo, setFilterDateTo] = React.useState(() => getInitialWarehouseFilters().dateTo)
   const [page, setPage] = React.useState(1)
 
-  // Восстановление фильтров из localStorage при монтировании
-  React.useEffect(() => {
-    try {
-      const raw = typeof window !== "undefined" ? localStorage.getItem(FILTERS_STORAGE_KEY) : null
-      if (!raw) return
-      const saved = JSON.parse(raw) as Record<string, unknown>
-      if (saved && typeof saved === "object") {
-        if (typeof saved.number === "string") setFilterNumber(saved.number)
-        if (typeof saved.comment === "string") setFilterComment(saved.comment)
-        if (typeof saved.warehouse === "string") setFilterWarehouse(saved.warehouse)
-        if (typeof saved.dateFrom === "string") setFilterDateFrom(saved.dateFrom)
-        if (typeof saved.dateTo === "string") setFilterDateTo(saved.dateTo)
-      }
-    } catch {
-      // ignore
-    }
-  }, [])
+  // Сброс кэша при размонтировании, чтобы при повторном входе читать актуальный localStorage
+  React.useEffect(() => () => { cachedInitialWarehouseFilters = null }, [])
+
   // Сохранение фильтров в localStorage при изменении
   React.useEffect(() => {
     try {
