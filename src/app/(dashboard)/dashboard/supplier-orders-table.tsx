@@ -644,7 +644,7 @@ export function SupplierOrdersTable() {
             ) : null}
           </div>
           {contractorComboboxOpen && filterContractor.trim().length > 0 && (
-            <div className="absolute left-0 top-full z-50 mt-1 w-[250px] rounded-md border bg-popover text-popover-foreground shadow-md outline-none">
+            <div className="absolute left-0 top-full z-50 mt-1 w-full min-w-0 rounded-md border bg-popover text-popover-foreground shadow-md outline-none">
               <Command shouldFilter={false}>
                 <CommandList>
                   <CommandEmpty>Контрагенты не найдены</CommandEmpty>
