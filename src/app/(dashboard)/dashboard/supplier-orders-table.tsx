@@ -47,6 +47,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Separator } from "@/components/ui/separator"
 import dynamic from "next/dynamic"
 import { cn, formatDate } from "@/lib/utils"
+import { parseDate as parseIsoDate } from "@internationalized/date"
+import { JollyDateRangePicker } from "@/components/ui/date-range-picker"
 import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preference"
 import type { SupplierOrder, SupplierOrderAttachment } from "@/types/1c"
 import { OfficeViewer } from "@/components/office-viewer"
@@ -91,9 +93,11 @@ interface SupplierOrderDetails extends SupplierOrder {
  * Парсит дату из формата "09.06.2023 10:59:09" в Date
  */
 function parseDate(dateStr: string): Date {
-  const [datePart, timePart] = dateStr.split(" ")
-  const [day, month, year] = datePart.split(".").map(Number)
-  const [hours, minutes, seconds] = timePart.split(":").map(Number)
+  if (!dateStr?.trim()) return new Date(0)
+  const [datePart, timePart] = dateStr.trim().split(" ")
+  const parts = (datePart || "").split(".")
+  const [day = 0, month = 1, year = 0] = parts.map(Number)
+  const [hours = 0, minutes = 0, seconds = 0] = (timePart || "0:0:0").split(":").map(Number)
   return new Date(year, month - 1, day, hours, minutes, seconds)
 }
 
@@ -101,9 +105,22 @@ function parseDate(dateStr: string): Date {
  * Извлекает год из даты в формате "09.06.2023 10:59:09" → "23"
  */
 function extractShortYear(dateStr: string): string {
-  const [datePart] = dateStr.split(" ")
-  const [, , year] = datePart.split(".")
-  return year.slice(-2)
+  if (!dateStr?.trim()) return ""
+  const [datePart] = dateStr.trim().split(" ")
+  const parts = (datePart || "").split(".")
+  const year = parts[2] ?? ""
+  return String(year).slice(-2)
+}
+
+function periodToShortYear(dateFrom: string): string {
+  if (!dateFrom || !dateFrom.includes("-")) return ""
+  const y = dateFrom.slice(0, 4)
+  return y.length === 4 ? y.slice(-2) : ""
+}
+
+function parseDateToTime(dateStr: string | undefined): number {
+  if (!dateStr?.trim()) return 0
+  return parseDate(dateStr).getTime()
 }
 
 /** Кнопка сброса одного параметра (внутри input-полей) */
@@ -325,7 +342,8 @@ export function SupplierOrdersTable() {
   // Фильтры для API (серверная фильтрация)
   const [filterCode, setFilterCode] = useState("")
   const [filterContractor, setFilterContractor] = useState("")
-  const [filterYear, setFilterYear] = useState("")
+  const [filterDateFrom, setFilterDateFrom] = useState("")
+  const [filterDateTo, setFilterDateTo] = useState("")
   const [filterFull, setFilterFull] = useState(false)
 
   // Фильтры для клиентской фильтрации
@@ -367,7 +385,8 @@ export function SupplierOrdersTable() {
   type OrdersFilters = {
     code: string
     contractor: string
-    year: string
+    dateFrom: string
+    dateTo: string
     full: boolean
   }
 
@@ -377,10 +396,11 @@ export function SupplierOrdersTable() {
     try {
       const code = overrides?.code ?? filterCode
       const contractor = overrides?.contractor ?? filterContractor
-      const year = overrides?.year ?? filterYear
+      const dateFrom = overrides?.dateFrom ?? filterDateFrom
+      const dateTo = overrides?.dateTo ?? filterDateTo
       const full = overrides?.full ?? filterFull
+      const year = periodToShortYear(dateFrom || dateTo)
 
-      // Формируем URL с параметрами фильтрации
       const params = new URLSearchParams()
       if (code.trim()) params.set("code", code.trim())
       if (contractor.trim()) params.set("contractor", contractor.trim())
@@ -396,14 +416,25 @@ export function SupplierOrdersTable() {
         return
       }
 
-      // Сортируем по дате: новые вверху
       const sorted = (data.data || []).sort((a: SupplierOrder, b: SupplierOrder) => {
         const dateA = parseDate(a.Дата)
         const dateB = parseDate(b.Дата)
         return dateB.getTime() - dateA.getTime()
       })
 
-      setOrders(sorted)
+      const fromTs = parseDateToTime(dateFrom || undefined)
+      const toTsEnd = dateTo ? parseDateToTime(dateTo) + 24 * 60 * 60 * 1000 - 1 : 0
+      const filtered =
+        fromTs > 0 || toTsEnd > 0
+          ? sorted.filter((o: SupplierOrder) => {
+              const ts = parseDateToTime(o.Дата)
+              if (fromTs > 0 && ts < fromTs) return false
+              if (toTsEnd > 0 && ts > toTsEnd) return false
+              return true
+            })
+          : sorted
+
+      setOrders(filtered)
       setPage(1)
     } catch (error) {
       console.error("Ошибка загрузки заказов:", error)
@@ -411,7 +442,7 @@ export function SupplierOrdersTable() {
     } finally {
       setLoading(false)
     }
-  }, [filterCode, filterContractor, filterYear, filterFull])
+  }, [filterCode, filterContractor, filterDateFrom, filterDateTo, filterFull])
 
   // Первоначальная загрузка - сначала загружаем ВСЕ данные для сбора всех доступных годов
   useEffect(() => {
@@ -449,7 +480,7 @@ export function SupplierOrdersTable() {
     // Пропускаем первую загрузку (она выполняется в useEffect выше)
     if (!isInitialLoadDone.current) return
     loadOrders()
-  }, [filterYear, filterFull]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [filterDateFrom, filterDateTo, filterFull]) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Текстовые фильтры применяются вручную (Enter или кнопка "Применить")
 
@@ -464,9 +495,6 @@ export function SupplierOrdersTable() {
   }, [orders])
 
   // Опции для dropdown-ов — из накопленного набора
-  const uniqueYears = useMemo(() => {
-    return Array.from(optionsAccumulator.current.years).sort((a, b) => Number(b) - Number(a))
-  }, [orders])
   const uniqueOrganizations = useMemo(() => {
     return Array.from(optionsAccumulator.current.orgs).sort()
   }, [orders])
@@ -557,12 +585,13 @@ export function SupplierOrdersTable() {
   const handleResetFilters = useCallback(() => {
     setFilterCode("")
     setFilterContractor("")
-    setFilterYear("")
+    setFilterDateFrom("")
+    setFilterDateTo("")
     setFilterFull(false)
     setFilterOrganization("")
     setFilterResponsible("")
     setSearchQuery("")
-    loadOrders({ code: "", contractor: "", year: "", full: false })
+    loadOrders({ code: "", contractor: "", dateFrom: "", dateTo: "", full: false })
   }, [loadOrders])
 
   if (loading) {
@@ -588,7 +617,7 @@ export function SupplierOrdersTable() {
         <Label htmlFor="filter-contractor" className="text-xs text-muted-foreground">
           Контрагент
         </Label>
-        <Label className="text-xs text-muted-foreground">Год</Label>
+        <Label className="text-xs text-muted-foreground">Год, период</Label>
         <Label className="text-xs text-muted-foreground">Организация</Label>
         <Label className="text-xs text-muted-foreground">Ответственный</Label>
         <div />
@@ -672,26 +701,31 @@ export function SupplierOrdersTable() {
             </div>
           )}
         </div>
-        <div className="flex h-8 items-center gap-1">
-          <Select 
-            value={filterYear || "__all__"} 
-            onValueChange={(v) => setFilterYear(v === "__all__" ? "" : v)}
-          >
-            <SelectTrigger size="sm" className="h-8 w-[90px]">
-              <SelectValue placeholder="Все" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Все</SelectItem>
-              {uniqueYears.map((year) => (
-                <SelectItem key={year} value={year}>
-                  20{year}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {filterYear ? (
-            <ClearFilterButton onClick={() => setFilterYear("")} aria-label="Сбросить год" />
-          ) : null}
+        <div className="w-[280px] min-w-[280px]">
+          <JollyDateRangePicker
+            label=""
+            fieldGroupVariant="filter"
+            className="w-full min-w-0"
+            value={
+              filterDateFrom || filterDateTo
+                ? {
+                    start: filterDateFrom ? parseIsoDate(filterDateFrom) : parseIsoDate(filterDateTo!),
+                    end: filterDateTo ? parseIsoDate(filterDateTo) : parseIsoDate(filterDateFrom!),
+                  }
+                : null
+            }
+            onChange={(range) => {
+              if (!range) {
+                setFilterDateFrom("")
+                setFilterDateTo("")
+                return
+              }
+              const fmt = (d: { year: number; month: number; day: number }) =>
+                `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`
+              setFilterDateFrom(fmt(range.start))
+              setFilterDateTo(fmt(range.end))
+            }}
+          />
         </div>
         <div className="flex h-8 items-center gap-1">
           <Select 

@@ -34,6 +34,8 @@ import { useTableAutoPageSize } from "@/hooks/use-table-auto-page-size"
 import { useTablePageSizePreference } from "@/hooks/use-table-page-size-preference"
 import type { Receipt } from "@/types/1c"
 import { formatDate } from "@/lib/utils"
+import { parseDate as parseIsoDate } from "@internationalized/date"
+import { JollyDateRangePicker } from "@/components/ui/date-range-picker"
 
 const DEBOUNCE_MS = 500
 
@@ -78,6 +80,17 @@ function extractShortYear(dateStr: string): string {
   return year.slice(-2)
 }
 
+function periodToShortYear(dateFrom: string): string {
+  if (!dateFrom || !dateFrom.includes("-")) return ""
+  const y = dateFrom.slice(0, 4)
+  return y.length === 4 ? y.slice(-2) : ""
+}
+
+function parseDateToTime(dateStr: string | undefined): number {
+  if (!dateStr?.trim()) return 0
+  return parseDate(dateStr).getTime()
+}
+
 function formatSum(sum: number): string {
   return new Intl.NumberFormat("ru-RU", {
     minimumFractionDigits: 2,
@@ -91,7 +104,8 @@ export function ReceiptsTable() {
   const [page, setPage] = useState(1)
 
   const [filterCode, setFilterCode] = useState("")
-  const [filterYear, setFilterYear] = useState("")
+  const [filterDateFrom, setFilterDateFrom] = useState("")
+  const [filterDateTo, setFilterDateTo] = useState("")
   const [filterContractor, setFilterContractor] = useState("")
   const [filterOrg, setFilterOrg] = useState("")
   const [filterMaterial, setFilterMaterial] = useState("")
@@ -123,18 +137,20 @@ export function ReceiptsTable() {
   })
 
   const loadReceipts = useCallback(
-    async (overrides?: Partial<{ code: string; year: string; contractor: string; org: string; material: string; full: boolean }>) => {
+    async (overrides?: Partial<{ code: string; dateFrom: string; dateTo: string; contractor: string; org: string; material: string; full: boolean }>) => {
       setLoading(true)
       const code = overrides?.code ?? filterCode
-      const year = overrides?.year ?? filterYear
+      const dateFrom = overrides?.dateFrom ?? filterDateFrom
+      const dateTo = overrides?.dateTo ?? filterDateTo
       const contractor = overrides?.contractor ?? filterContractor
       const org = overrides?.org ?? filterOrg
       const material = overrides?.material ?? filterMaterial
       const full = overrides?.full ?? filterFull
+      const year = periodToShortYear(dateFrom || dateTo)
       try {
         const params = new URLSearchParams()
         if (code.trim()) params.set("code", code.trim())
-        if (year.trim()) params.set("year", year.trim())
+        if (year) params.set("year", year)
         if (contractor.trim()) params.set("contractor", contractor.trim())
         if (org.trim()) params.set("org", org.trim())
         if (material.trim()) params.set("material", material.trim())
@@ -157,13 +173,25 @@ export function ReceiptsTable() {
           return dateB.getTime() - dateA.getTime()
         })
 
-        sorted.forEach((r: Receipt) => {
+        const fromTs = parseDateToTime(dateFrom || undefined)
+        const toTsEnd = dateTo ? parseDateToTime(dateTo) + 24 * 60 * 60 * 1000 - 1 : 0
+        const filtered =
+          fromTs > 0 || toTsEnd > 0
+            ? sorted.filter((r: Receipt) => {
+                const ts = parseDateToTime(r.Дата)
+                if (fromTs > 0 && ts < fromTs) return false
+                if (toTsEnd > 0 && ts > toTsEnd) return false
+                return true
+              })
+            : sorted
+
+        filtered.forEach((r: Receipt) => {
           if (r.Дата) optionsAccumulator.current.years.add(extractShortYear(r.Дата))
           if (r.Организация) optionsAccumulator.current.orgs.add(r.Организация)
           if (r.Контрагент) optionsAccumulator.current.contractors.add(r.Контрагент)
         })
 
-        setReceipts(sorted)
+        setReceipts(filtered)
         setPage(1)
       } catch (error) {
         console.error("Ошибка загрузки поступлений:", error)
@@ -173,7 +201,7 @@ export function ReceiptsTable() {
         setLoading(false)
       }
     },
-    [filterCode, filterYear, filterContractor, filterOrg, filterMaterial, filterFull]
+    [filterCode, filterDateFrom, filterDateTo, filterContractor, filterOrg, filterMaterial, filterFull]
   )
 
   // Первая загрузка — без фильтров, накопить опции и показать данные
@@ -218,17 +246,18 @@ export function ReceiptsTable() {
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [filterCode, filterYear, filterContractor, filterOrg, filterMaterial, filterFull, loadReceipts])
+  }, [filterCode, filterDateFrom, filterDateTo, filterContractor, filterOrg, filterMaterial, filterFull, loadReceipts])
 
   const handleResetFilters = useCallback(() => {
     setFilterCode("")
-    setFilterYear("")
+    setFilterDateFrom("")
+    setFilterDateTo("")
     setFilterContractor("")
     setContractorComboboxOpen(false)
     setFilterOrg("")
     setFilterMaterial("")
     setFilterFull(false)
-    loadReceipts({ code: "", year: "", contractor: "", org: "", material: "", full: false })
+    loadReceipts({ code: "", dateFrom: "", dateTo: "", contractor: "", org: "", material: "", full: false })
   }, [loadReceipts])
 
   const tableContainerRef = useRef<HTMLDivElement>(null)
@@ -236,10 +265,6 @@ export function ReceiptsTable() {
   const useAutoSize = pageSizeSelectValue === "auto" && autoPageSize > 0
   const effectivePageSize = useAutoSize ? autoPageSize : pageSize
 
-  const uniqueYears = useMemo(
-    () => Array.from(optionsAccumulator.current.years).sort((a, b) => Number(b) - Number(a)),
-    [receipts]
-  )
   const uniqueOrgs = useMemo(() => Array.from(optionsAccumulator.current.orgs).sort(), [receipts])
   const uniqueContractors = useMemo(() => Array.from(optionsAccumulator.current.contractors).sort(), [receipts])
 
@@ -260,7 +285,7 @@ export function ReceiptsTable() {
         <Label htmlFor="receipt-filter-contractor" className="text-xs text-muted-foreground">
           Контрагент
         </Label>
-        <Label className="text-xs text-muted-foreground">Год</Label>
+        <Label className="text-xs text-muted-foreground">Год, период</Label>
         <Label className="text-xs text-muted-foreground">Организация</Label>
         <Label htmlFor="receipt-filter-material" className="text-xs text-muted-foreground">
           Материал
@@ -329,19 +354,31 @@ export function ReceiptsTable() {
             </div>
           )}
         </div>
-        <div className="flex h-8 items-center gap-1">
-          <Select value={filterYear || "__all__"} onValueChange={(v) => setFilterYear(v === "__all__" ? "" : v)}>
-            <SelectTrigger size="sm" className="h-8 w-[90px]">
-              <SelectValue placeholder="Все" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="__all__">Все</SelectItem>
-              {uniqueYears.map((y) => (
-                <SelectItem key={y} value={y}>20{y}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          {filterYear ? <ClearFilterButton onClick={() => setFilterYear("")} aria-label="Сбросить год" /> : null}
+        <div className="w-[280px] min-w-[280px]">
+          <JollyDateRangePicker
+            label=""
+            fieldGroupVariant="filter"
+            className="w-full min-w-0"
+            value={
+              filterDateFrom || filterDateTo
+                ? {
+                    start: filterDateFrom ? parseIsoDate(filterDateFrom) : parseIsoDate(filterDateTo!),
+                    end: filterDateTo ? parseIsoDate(filterDateTo) : parseIsoDate(filterDateFrom!),
+                  }
+                : null
+            }
+            onChange={(range) => {
+              if (!range) {
+                setFilterDateFrom("")
+                setFilterDateTo("")
+                return
+              }
+              const fmt = (d: { year: number; month: number; day: number }) =>
+                `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`
+              setFilterDateFrom(fmt(range.start))
+              setFilterDateTo(fmt(range.end))
+            }}
+          />
         </div>
         <div className="flex h-8 items-center gap-1">
           <Select value={filterOrg || "__all__"} onValueChange={(v) => setFilterOrg(v === "__all__" ? "" : v)}>
