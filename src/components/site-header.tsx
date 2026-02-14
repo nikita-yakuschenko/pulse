@@ -63,7 +63,7 @@ const PROCUREMENT_SUBSECTIONS: Record<string, { label: string; href: string }> =
 // Подразделы «Склад»
 const WAREHOUSE_SUBSECTIONS: Record<string, { label: string; href: string }> = {
   inventory: { label: "Номенклатура и остатки", href: "/warehouse/inventory" },
-  movements: { label: "Движение материалов", href: "/warehouse/movements" },
+  transfers: { label: "Движение материалов", href: "/warehouse/transfers" },
 }
 
 function getBreadcrumbs(pathname: string): { href: string; label: string; isLast: boolean }[] {

@@ -551,7 +551,7 @@ export default function SpecificationsPage() {
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>
         <SheetContent
           side="right"
-          className="flex flex-col p-0 overflow-hidden !w-[50vw] !max-w-[50vw] border-l"
+          className="flex flex-col p-0 overflow-hidden border-l"
           showCloseButton={false}
         >
           {/* Заголовок: наименование крупно, под ним код с копированием */}

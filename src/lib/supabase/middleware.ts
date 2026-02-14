@@ -1,7 +1,15 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-const AUTH_TIMEOUT_MS = 8_000;
+/** Таймаут одного запроса к Supabase Auth. При медленной сети — увеличить. */
+const AUTH_TIMEOUT_MS = 25_000;
+/** Пауза перед повтором при таймауте/сетевой ошибке (мс). */
+const AUTH_RETRY_DELAY_MS = 2_000;
+
+function isAuthNetworkOrTimeoutError(err: unknown): boolean {
+  const msg = err instanceof Error ? err.message : String(err);
+  return msg === "Auth timeout" || /fetch failed|timeout|ECONNRESET|ETIMEDOUT|unreachable/i.test(msg);
+}
 
 export async function updateSession(request: NextRequest) {
   const response = NextResponse.next({ request });
@@ -24,7 +32,7 @@ export async function updateSession(request: NextRequest) {
   );
 
   let user = null;
-  try {
+  const tryGetUser = async (): Promise<{ user: unknown } | null> => {
     const timeoutPromise = new Promise<never>((_, reject) =>
       setTimeout(() => reject(new Error("Auth timeout")), AUTH_TIMEOUT_MS)
     );
@@ -32,11 +40,27 @@ export async function updateSession(request: NextRequest) {
       supabase.auth.getUser(),
       timeoutPromise,
     ]);
-    user = result?.data?.user ?? null;
-  } catch (err) {
-    // 504, network error, timeout — считаем "не залогинен", не блокируем приложение
-    if (process.env.NODE_ENV === "development") {
-      console.warn("[auth] Supabase unreachable:", err instanceof Error ? err.message : err);
+    return result?.data?.user != null ? { user: result.data.user } : null;
+  };
+
+  try {
+    const data = await tryGetUser();
+    user = data?.user ?? null;
+  } catch (firstErr) {
+    if (isAuthNetworkOrTimeoutError(firstErr)) {
+      try {
+        await new Promise((r) => setTimeout(r, AUTH_RETRY_DELAY_MS));
+        const data = await tryGetUser();
+        user = data?.user ?? null;
+      } catch (retryErr) {
+        if (process.env.NODE_ENV === "development") {
+          console.warn("[auth] Supabase unreachable:", retryErr instanceof Error ? retryErr.message : retryErr);
+        }
+      }
+    } else {
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[auth] Supabase unreachable:", firstErr instanceof Error ? firstErr.message : firstErr);
+      }
     }
   }
   const { pathname } = request.nextUrl;
