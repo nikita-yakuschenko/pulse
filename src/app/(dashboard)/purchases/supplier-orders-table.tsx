@@ -361,6 +361,45 @@ export function SupplierOrdersTable() {
   // Состояние для combobox контрагентов
   const [contractorComboboxOpen, setContractorComboboxOpen] = useState(false)
 
+  const FILTERS_STORAGE_KEY = "pulse:filters:supplier-orders"
+  useEffect(() => {
+    try {
+      const raw = typeof window !== "undefined" ? localStorage.getItem(FILTERS_STORAGE_KEY) : null
+      if (!raw) return
+      const saved = JSON.parse(raw) as Record<string, unknown>
+      if (saved && typeof saved === "object") {
+        if (typeof saved.code === "string") setFilterCode(saved.code)
+        if (typeof saved.contractor === "string") setFilterContractor(saved.contractor)
+        if (typeof saved.dateFrom === "string") setFilterDateFrom(saved.dateFrom)
+        if (typeof saved.dateTo === "string") setFilterDateTo(saved.dateTo)
+        if (typeof saved.full === "boolean") setFilterFull(saved.full)
+        if (typeof saved.organization === "string") setFilterOrganization(saved.organization)
+        if (typeof saved.responsible === "string") setFilterResponsible(saved.responsible)
+      }
+    } catch {
+      // ignore
+    }
+  }, [])
+  useEffect(() => {
+    try {
+      if (typeof window === "undefined") return
+      localStorage.setItem(
+        FILTERS_STORAGE_KEY,
+        JSON.stringify({
+          code: filterCode,
+          contractor: filterContractor,
+          dateFrom: filterDateFrom,
+          dateTo: filterDateTo,
+          full: filterFull,
+          organization: filterOrganization,
+          responsible: filterResponsible,
+        })
+      )
+    } catch {
+      // ignore
+    }
+  }, [filterCode, filterContractor, filterDateFrom, filterDateTo, filterFull, filterOrganization, filterResponsible])
+
   // Состояние для Sheet с подробной информацией о заказе
   const [selectedOrder, setSelectedOrder] = useState<SupplierOrder | null>(null)
   const [orderDetails, setOrderDetails] = useState<SupplierOrderDetails | null>(null)
