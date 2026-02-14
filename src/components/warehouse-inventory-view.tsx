@@ -51,6 +51,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { TableSkeleton } from "@/components/ui/table-skeleton"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -1208,12 +1209,7 @@ export function WarehouseInventoryView() {
             <div className="space-y-4">
               <div className="rounded-lg border overflow-hidden">
                 {materialsLoading ? (
-                  <div className="w-full min-h-[400px] flex items-center justify-center">
-                    <div className="flex flex-col items-center gap-2">
-                      <IconLoader className="h-8 w-8 animate-spin text-muted-foreground" />
-                      <p className="text-sm text-muted-foreground">Загрузка номенклатуры...</p>
-                    </div>
-                  </div>
+                  <TableSkeleton columnCount={5} rowCount={15} />
                 ) : materialsError ? (
                   <div className="w-full min-h-[280px] flex items-center justify-center">
                     <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center text-destructive max-w-md">
