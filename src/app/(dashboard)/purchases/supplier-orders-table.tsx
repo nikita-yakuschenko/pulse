@@ -785,7 +785,7 @@ export function SupplierOrdersTable() {
       <div ref={tableContainerRef} className="flex flex-col gap-3">
       {loading ? (
         <div className="overflow-hidden rounded-lg border">
-          <TableSkeleton columnCount={6} rowCount={10} />
+          <TableSkeleton columnCount={6} rowCount={Math.max(effectivePageSize || autoPageSize, 10)} />
         </div>
       ) : (
         <>
