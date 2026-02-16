@@ -304,6 +304,50 @@ export async function getWarehouses(userMetadata: Record<string, unknown>) {
 }
 
 /**
+ * Параметры фильтрации поставщиков (API: suppliers/get/...)
+ */
+export interface SuppliersFilters {
+  inn?: string  // ИНН
+  name?: string // Поиск по наименованию (вхождение)
+}
+
+/**
+ * Строит endpoint для запроса поставщиков:
+ * - list — полный список
+ * - inn/{x} — по ИНН
+ * - name/{x} — по наименованию
+ * - name/{x}/inn/{y} — по наименованию и ИНН
+ */
+export function buildSuppliersEndpoint(filters: SuppliersFilters): string {
+  const name = filters.name?.trim()
+  const inn = filters.inn?.trim()
+  const encodePath = (value: string): string => encodeURIComponent(value)
+
+  if (name && inn) {
+    return `suppliers/get/name/${encodePath(name)}/inn/${encodePath(inn)}`
+  }
+  if (inn) {
+    return `suppliers/get/inn/${encodePath(inn)}`
+  }
+  if (name) {
+    return `suppliers/get/name/${encodePath(name)}`
+  }
+  return "suppliers/get/list"
+}
+
+/**
+ * Список поставщиков из 1С: suppliers/get/list или с фильтрами inn, name
+ */
+export async function getSuppliers(userMetadata: Record<string, unknown>, filters?: SuppliersFilters) {
+  const credentials = await getOneCCredentials(userMetadata)
+  if (!credentials) throw new Error("1С не настроена")
+  const client = createOneCClient(credentials)
+  const endpoint = buildSuppliersEndpoint(filters ?? {})
+  const raw = await client.get(endpoint)
+  return Array.isArray(raw) ? raw : (raw && typeof raw === "object" && "data" in raw ? (raw as { data: unknown[] }).data : [])
+}
+
+/**
  * Параметры фильтрации платежей
  */
 export interface PaymentsFilters {
