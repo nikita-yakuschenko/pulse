@@ -317,21 +317,23 @@ export function WarehouseTransfersView() {
   const startTransferIdx = (transfersPage - 1) * effectiveTransferPageSize
   const currentTransfers = filteredTransfers.slice(startTransferIdx, startTransferIdx + effectiveTransferPageSize)
 
-  // Сбрасываем «Авто» в 17 только на узком экране (мобильные), где авто-высота не считается. На десктопе не трогаем — иначе при загрузке (пока autoPageSize ещё 0) затирали бы сохранённое «Авто» в БД.
+  // Сбрасываем «Авто» в 17 только на узком экране и только когда активна соответствующая вкладка (иначе autoPageSize/transfersAutoPageSize отключены и равны 0 — затирали бы сохранённое «Авто» в БД).
   const DESKTOP_MIN_PX = 1024
   React.useEffect(() => {
+    if (activeTab !== "requirements") return
     if (autoPageSize === 0 && pageSizeSelectValue === "auto" && typeof window !== "undefined" && window.innerWidth < DESKTOP_MIN_PX) {
       setPageSizeAndSave(17)
       setPage(1)
     }
-  }, [autoPageSize, pageSizeSelectValue, setPageSizeAndSave])
+  }, [activeTab, autoPageSize, pageSizeSelectValue, setPageSizeAndSave])
 
   React.useEffect(() => {
+    if (activeTab !== "transfers") return
     if (transfersAutoPageSize === 0 && transferPageSizeSelectValue === "auto" && typeof window !== "undefined" && window.innerWidth < DESKTOP_MIN_PX) {
       setTransferPageSizeAndSave(17)
       setTransfersPage(1)
     }
-  }, [transfersAutoPageSize, transferPageSizeSelectValue, setTransferPageSizeAndSave])
+  }, [activeTab, transfersAutoPageSize, transferPageSizeSelectValue, setTransferPageSizeAndSave])
 
   React.useEffect(() => {
     setPage(1)
