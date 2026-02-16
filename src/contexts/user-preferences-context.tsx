@@ -51,10 +51,8 @@ export function UserPreferencesProvider({ children }: { children: React.ReactNod
         setPreferences(prefs)
       }
     } catch {
-      const data = await fetch("/api/profile/preferences").then((r) => (r.ok ? r.json() : {}))
-      const prefs: UserPreferences =
-        typeof data === "object" && data !== null ? (data as UserPreferences) : {}
-      setPreferences(prefs)
+      // При сетевой ошибке (Failed to fetch) повторный fetch тоже упадёт — не вызываем его
+      // Оптимистичное обновление остаётся в состоянии
     }
   }, [])
 
