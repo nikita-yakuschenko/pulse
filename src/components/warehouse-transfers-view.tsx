@@ -83,7 +83,19 @@ function ClearFilterButton({ onClick, "aria-label": ariaLabel = "Сбросит�
 }
 
 const TAB_PREFERENCE_KEY = "warehouse-transfers-tab"
+const TAB_LOCAL_KEY = "pulse-pref:warehouse-transfers-tab"
 const FILTERS_STORAGE_KEY = "pulse:filters:warehouse-requirements"
+
+function getInitialTab(): "requirements" | "transfers" | "realizations" {
+  if (typeof window === "undefined") return "requirements"
+  try {
+    const v = localStorage.getItem(TAB_LOCAL_KEY)
+    if (v === "requirements" || v === "transfers" || v === "realizations") return v
+  } catch {
+    // ignore
+  }
+  return "requirements"
+}
 
 // Один раз читаем сохранённые фильтры для инициализации state (избегаем гонки с эффектом сохранения)
 let cachedInitialWarehouseFilters: {
@@ -161,7 +173,7 @@ type TransferFull = TransferRow & {
 
 export function WarehouseTransfersView() {
   const { preferences, setPreference, isLoaded: prefsLoadedTab } = useUserPreferences()
-  const [activeTab, setActiveTabState] = React.useState<"requirements" | "transfers" | "realizations">("requirements")
+  const [activeTab, setActiveTabState] = React.useState<"requirements" | "transfers" | "realizations">(getInitialTab)
   const [loading, setLoading] = React.useState(false)
   const [demands, setDemands] = React.useState<DemandRow[]>([])
   const [demandsError, setDemandsError] = React.useState<string | null>(null)
@@ -212,7 +224,9 @@ export function WarehouseTransfersView() {
   )
 
   const tableContainerRef = React.useRef<HTMLDivElement>(null)
-  const autoPageSize = useTableAutoPageSize(tableContainerRef)
+  const autoPageSize = useTableAutoPageSize(tableContainerRef, {
+    enabled: activeTab === "requirements",
+  })
   const {
     pageSize,
     pageSizeSelectValue,
@@ -303,25 +317,21 @@ export function WarehouseTransfersView() {
   const startTransferIdx = (transfersPage - 1) * effectiveTransferPageSize
   const currentTransfers = filteredTransfers.slice(startTransferIdx, startTransferIdx + effectiveTransferPageSize)
 
+  // Сбрасываем «Авто» в 17 только на узком экране (мобильные), где авто-высота не считается. На десктопе не трогаем — иначе при загрузке (пока autoPageSize ещё 0) затирали бы сохранённое «Авто» в БД.
+  const DESKTOP_MIN_PX = 1024
   React.useEffect(() => {
-    if (autoPageSize === 0 && pageSizeSelectValue === "auto") {
-      setPageSizeSelectValue("17")
+    if (autoPageSize === 0 && pageSizeSelectValue === "auto" && typeof window !== "undefined" && window.innerWidth < DESKTOP_MIN_PX) {
+      setPageSizeAndSave(17)
+      setPage(1)
     }
-  }, [autoPageSize, pageSizeSelectValue, setPageSizeSelectValue])
+  }, [autoPageSize, pageSizeSelectValue, setPageSizeAndSave])
 
   React.useEffect(() => {
-    if (transfersAutoPageSize === 0 && transferPageSizeSelectValue === "auto") {
-      setTransferPageSizeSelectValue("17")
-    }
-  }, [transfersAutoPageSize, transferPageSizeSelectValue, setTransferPageSizeSelectValue])
-
-  const setTransferPageSizeAndSaveTransfers = React.useCallback(
-    (n: number) => {
-      setTransferPageSizeAndSave(n)
+    if (transfersAutoPageSize === 0 && transferPageSizeSelectValue === "auto" && typeof window !== "undefined" && window.innerWidth < DESKTOP_MIN_PX) {
+      setTransferPageSizeAndSave(17)
       setTransfersPage(1)
-    },
-    [setTransferPageSizeAndSave]
-  )
+    }
+  }, [transfersAutoPageSize, transferPageSizeSelectValue, setTransferPageSizeAndSave])
 
   React.useEffect(() => {
     setPage(1)
@@ -330,14 +340,6 @@ export function WarehouseTransfersView() {
   React.useEffect(() => {
     setTransfersPage(1)
   }, [transferFilterNumber])
-
-  const setPageSizeAndSaveDemands = React.useCallback(
-    (n: number) => {
-      setPageSizeAndSave(n)
-      setPage(1)
-    },
-    [setPageSizeAndSave]
-  )
 
   const handleResetFilters = React.useCallback(() => {
     setFilterNumber("")
@@ -361,6 +363,11 @@ export function WarehouseTransfersView() {
   const setActiveTab = React.useCallback(
     (v: "requirements" | "transfers" | "realizations") => {
       setActiveTabState(v)
+      try {
+        if (typeof window !== "undefined") localStorage.setItem(TAB_LOCAL_KEY, v)
+      } catch {
+        // ignore
+      }
       setPreference(TAB_PREFERENCE_KEY, v)
     },
     [setPreference]
@@ -623,14 +630,18 @@ export function WarehouseTransfersView() {
                       <span className="text-sm text-muted-foreground">Записей на странице:</span>
                       <Select
                         value={pageSizeSelectValue}
-                        onValueChange={(v) => {
-                          setPageSizeSelectValue(v)
-                          if (v === "auto") {
+                        onValueChange={(value) => {
+                          if (value === "custom") {
+                            setPageSizeSelectValue("custom")
+                            return
+                          }
+                          if (value === "auto") {
+                            setPageSizeSelectValue("auto")
                             setPage(1)
                             return
                           }
-                          const n = PAGE_SIZE_PRESETS.find((p) => String(p) === v)
-                          if (n != null) setPageSizeAndSaveDemands(n)
+                          setPageSizeAndSave(Number(value))
+                          setPage(1)
                         }}
                       >
                         <SelectTrigger className="w-[120px]">
@@ -644,13 +655,29 @@ export function WarehouseTransfersView() {
                           {autoPageSize > 0 && (
                             <SelectItem value="auto">Авто ({autoPageSize})</SelectItem>
                           )}
-                          {PAGE_SIZE_PRESETS.map((n) => (
+                          {(PAGE_SIZE_PRESETS as number[]).map((n) => (
                             <SelectItem key={n} value={String(n)}>
                               {n}
                             </SelectItem>
                           ))}
+                          {pageSizeSelectValue === "custom" && !(PAGE_SIZE_PRESETS as number[]).includes(pageSize) && (
+                            <SelectItem value="custom">Своё ({pageSize})</SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
+                      {pageSizeSelectValue === "custom" && (
+                        <Input
+                          type="number"
+                          min={1}
+                          max={500}
+                          value={pageSize}
+                          onChange={(e) => {
+                            const v = e.target.value === "" ? 17 : Number(e.target.value)
+                            if (!Number.isNaN(v)) setPageSizeAndSave(v)
+                          }}
+                          className="h-8 w-[72px]"
+                        />
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Button
@@ -851,14 +878,18 @@ export function WarehouseTransfersView() {
                       <span className="text-sm text-muted-foreground">Записей на странице:</span>
                       <Select
                         value={transferPageSizeSelectValue}
-                        onValueChange={(v) => {
-                          setTransferPageSizeSelectValue(v)
-                          if (v === "auto") {
+                        onValueChange={(value) => {
+                          if (value === "custom") {
+                            setTransferPageSizeSelectValue("custom")
+                            return
+                          }
+                          if (value === "auto") {
+                            setTransferPageSizeSelectValue("auto")
                             setTransfersPage(1)
                             return
                           }
-                          const n = TRANSFER_PAGE_SIZE_PRESETS.find((p) => String(p) === v)
-                          if (n != null) setTransferPageSizeAndSaveTransfers(n)
+                          setTransferPageSizeAndSave(Number(value))
+                          setTransfersPage(1)
                         }}
                       >
                         <SelectTrigger className="w-[120px]">
@@ -872,13 +903,29 @@ export function WarehouseTransfersView() {
                           {transfersAutoPageSize > 0 && (
                             <SelectItem value="auto">Авто ({transfersAutoPageSize})</SelectItem>
                           )}
-                          {TRANSFER_PAGE_SIZE_PRESETS.map((n) => (
+                          {(TRANSFER_PAGE_SIZE_PRESETS as number[]).map((n) => (
                             <SelectItem key={n} value={String(n)}>
                               {n}
                             </SelectItem>
                           ))}
+                          {transferPageSizeSelectValue === "custom" && !(TRANSFER_PAGE_SIZE_PRESETS as number[]).includes(transferPageSize) && (
+                            <SelectItem value="custom">Своё ({transferPageSize})</SelectItem>
+                          )}
                         </SelectContent>
                       </Select>
+                      {transferPageSizeSelectValue === "custom" && (
+                        <Input
+                          type="number"
+                          min={1}
+                          max={500}
+                          value={transferPageSize}
+                          onChange={(e) => {
+                            const v = e.target.value === "" ? 17 : Number(e.target.value)
+                            if (!Number.isNaN(v)) setTransferPageSizeAndSave(v)
+                          }}
+                          className="h-8 w-[72px]"
+                        />
+                      )}
                     </div>
                     <div className="flex items-center gap-2">
                       <Button

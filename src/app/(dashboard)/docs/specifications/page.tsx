@@ -398,8 +398,7 @@ export default function SpecificationsPage() {
         </div>
       </div>
 
-      <div ref={tableContainerRef} className="flex flex-col gap-3">
-      <div className="rounded-md border overflow-hidden">
+      <div ref={tableContainerRef} className="rounded-lg border overflow-hidden">
         {loading ? (
           <TableSkeleton columnCount={6} rowCount={10} />
         ) : list.length === 0 ? (
@@ -407,6 +406,7 @@ export default function SpecificationsPage() {
             Нет данных. Измените фильтры или дождитесь загрузки из 1С.
           </div>
         ) : (
+          <>
           <Table className="[&_tbody_td]:h-10 [&_tbody_td]:py-1">
             <TableHeader className="bg-muted">
               <TableRow>
@@ -461,91 +461,86 @@ export default function SpecificationsPage() {
               ))}
             </TableBody>
           </Table>
-        )}
-        </div>
 
-        {/* Пагинация — как в Заказах/Заявках */}
-        {!loading && list.length > 0 && (
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Select
-                value={pageSizeSelectValue}
-                onValueChange={(value) => {
-                  if (value === "custom") {
-                    setPageSizeSelectValue("custom")
-                    return
-                  }
-                  if (value === "auto") {
-                    setPageSizeSelectValue("auto")
-                    setPage(1)
-                    return
-                  }
-                  setPageSizeAndSave(Number(value))
+        {/* Подвал таблицы — как в требованиях-накладных: border-t bg-muted/30 px-4 py-3 */}
+        <div className="flex flex-wrap items-center justify-between gap-4 border-t bg-muted/30 px-4 py-3">
+          <div className="flex items-center gap-2">
+            <span className="text-sm text-muted-foreground">Записей на странице:</span>
+            <Select
+              value={pageSizeSelectValue}
+              onValueChange={(value) => {
+                if (value === "custom") {
+                  setPageSizeSelectValue("custom")
+                  return
+                }
+                if (value === "auto") {
+                  setPageSizeSelectValue("auto")
+                  setPage(1)
+                  return
+                }
+                setPageSizeAndSave(Number(value))
+              }}
+            >
+              <SelectTrigger size="sm" className="h-8 w-[120px]">
+                {pageSizeSelectValue === "auto" && autoPageSize > 0 ? (
+                  <span>Авто ({autoPageSize})</span>
+                ) : (
+                  <SelectValue placeholder="Выберите..." />
+                )}
+              </SelectTrigger>
+              <SelectContent>
+                {autoPageSize > 0 && (
+                  <SelectItem value="auto">Авто ({autoPageSize})</SelectItem>
+                )}
+                <SelectItem value="17">17</SelectItem>
+                <SelectItem value="20">20</SelectItem>
+                <SelectItem value="50">50</SelectItem>
+                <SelectItem value="100">100</SelectItem>
+                <SelectItem value="200">200</SelectItem>
+                <SelectItem value="custom">Своё...</SelectItem>
+              </SelectContent>
+            </Select>
+            {pageSizeSelectValue === "custom" && (
+              <Input
+                type="number"
+                min={1}
+                max={500}
+                value={pageSize}
+                onChange={(e) => {
+                  const v = e.target.value === "" ? 17 : Number(e.target.value)
+                  if (!Number.isNaN(v)) setPageSizeAndSave(v)
                 }}
-              >
-                <SelectTrigger size="sm" className="h-8 w-[120px]">
-                  {pageSizeSelectValue === "auto" && autoPageSize > 0 ? (
-                    <span>Авто ({autoPageSize})</span>
-                  ) : (
-                    <SelectValue placeholder="Выберите..." />
-                  )}
-                </SelectTrigger>
-                <SelectContent>
-                  {autoPageSize > 0 && (
-                    <SelectItem value="auto">Авто ({autoPageSize})</SelectItem>
-                  )}
-                  <SelectItem value="17">17</SelectItem>
-                  <SelectItem value="20">20</SelectItem>
-                  <SelectItem value="50">50</SelectItem>
-                  <SelectItem value="100">100</SelectItem>
-                  <SelectItem value="200">200</SelectItem>
-                  <SelectItem value="custom">Своё...</SelectItem>
-                </SelectContent>
-              </Select>
-              {pageSizeSelectValue === "custom" && (
-                <Input
-                  type="number"
-                  min={1}
-                  max={500}
-                  value={pageSize}
-                  onChange={(e) => {
-                    const v = e.target.value === "" ? 17 : Number(e.target.value)
-                    if (!Number.isNaN(v)) setPageSizeAndSave(v)
-                  }}
-                  className="h-8 w-[72px]"
-                />
-              )}
-              <span className="text-sm text-muted-foreground">
-                записей на странице
-              </span>
-            </div>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={page === 1}
-              >
-                <IconChevronLeft className="h-4 w-4" />
-                Предыдущая
-              </Button>
-              <span className="text-sm text-muted-foreground">
-                Страница {page} из {totalPages}
-              </span>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
-                disabled={page === totalPages || totalPages === 0}
-              >
-                Следующая
-                <IconChevronRight className="h-4 w-4" />
-              </Button>
-            </div>
+                className="h-8 w-[72px]"
+              />
+            )}
           </div>
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+              disabled={page === 1}
+            >
+              <IconChevronLeft className="h-4 w-4" />
+              Предыдущая
+            </Button>
+            <span className="text-sm text-muted-foreground">
+              Страница {page} из {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages || totalPages === 0}
+            >
+              Следующая
+              <IconChevronRight className="h-4 w-4" />
+            </Button>
+          </div>
+        </div>
+          </>
         )}
       </div>
-        </div>
       </div>
 
       <Sheet open={detailOpen} onOpenChange={setDetailOpen}>

@@ -776,15 +776,12 @@ export function PaymentsTable() {
         </div>
       </div>
 
-      {/* Table: при загрузке — скелетон, иначе таблица и пагинация. ref для авто-высоты на десктопе. */}
-      <div ref={tableContainerRef} className="flex flex-col gap-3">
+      {/* Table: при загрузке — скелетон, иначе таблица и подвал. ref для авто-высоты. Оформление по образцу Требования-накладные. */}
+      <div ref={tableContainerRef} className="rounded-lg border overflow-hidden">
       {loading ? (
-        <div className="overflow-hidden rounded-lg border">
-          <TableSkeleton columnCount={7} rowCount={Math.max(effectivePageSize || autoPageSize || 17, 10)} />
-        </div>
+        <TableSkeleton columnCount={7} rowCount={Math.max(effectivePageSize || autoPageSize || 17, 10)} />
       ) : (
         <>
-      <div className="overflow-hidden rounded-lg border">
         <Table className="[&_tbody_td]:h-10 [&_tbody_td]:py-1">
           <TableHeader className="bg-muted">
             <TableRow>
@@ -892,9 +889,8 @@ export function PaymentsTable() {
             )}
           </TableBody>
         </Table>
-      </div>
 
-      {/* Подвал таблицы — как в требованиях и перемещениях: визуальная консистентность */}
+      {/* Подвал таблицы — как в требованиях-накладных: border-t bg-muted/30 px-4 py-3 */}
       <div className="flex flex-wrap items-center justify-between gap-4 border-t bg-muted/30 px-4 py-3">
         <div className="flex items-center gap-2">
           <span className="text-sm text-muted-foreground">Записей на странице:</span>

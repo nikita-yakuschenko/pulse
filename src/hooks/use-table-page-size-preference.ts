@@ -19,35 +19,46 @@ function getLocalSelect(keySelect: string): string | null {
 
 /**
  * Размер страницы и режим выбора (число / авто) из настроек пользователя — синхронизация между устройствами.
- * При выборе значение пишется в сервер и в localStorage; при загрузке берётся с сервера, при отсутствии — из localStorage (чтобы перезагрузка не сбрасывала значение до завершения PATCH).
+ * Источник истины при загрузке — БД (ответ GET /api/profile/preferences), чтобы не зависеть от порядка монтирования вкладок и localStorage.
+ * При выборе значение пишется в сервер (PATCH) и в localStorage (оптимистичный UI до ответа).
  */
 export function useTablePageSizePreference(storageKey: string) {
   const { preferences, setPreference, isLoaded } = useUserPreferences()
   const keySelect = `${storageKey}-select`
 
-  const [pageSize, setPageSizeState] = useState(DEFAULT_PAGE_SIZE)
-  const [pageSizeSelectValue, setPageSizeSelectValueState] = useState<string>("17")
+  // При монтировании сразу читаем из localStorage — состояние «Авто»/число не теряется при переходе на другую страницу и возврате
+  const [pageSizeSelectValue, setPageSizeSelectValueState] = useState<string>(() => {
+    if (typeof window === "undefined") return "17"
+    const v = getLocalSelect(keySelect)
+    return v ?? "17"
+  })
+  const [pageSize, setPageSizeState] = useState(() => {
+    if (typeof window === "undefined") return DEFAULT_PAGE_SIZE
+    const v = getLocalSelect(keySelect)
+    if (v === "auto" || v === "custom") return DEFAULT_PAGE_SIZE
+    const n = Number(v)
+    if (!Number.isNaN(n) && n >= 1 && n <= 500) return n
+    return DEFAULT_PAGE_SIZE
+  })
 
-  // Сразу после монтирования на клиенте подставляем значение из localStorage (при SSR его нет — будет «17» до гидрации)
+  // Дотягиваем число из localStorage, если там число (первый эффект оставляем для согласованности pageSize с выбором)
   useEffect(() => {
     const local = getLocalSelect(keySelect)
-    if (!local) return
-    if (local === "auto" || local === "custom") {
-      setPageSizeSelectValueState(local)
-      return
-    }
+    if (!local || local === "auto" || local === "custom") return
     const n = Number(local)
-    if (!Number.isNaN(n) && n >= 1 && n <= 500) {
-      setPageSizeSelectValueState(local)
-      setPageSizeState(n)
-    }
+    if (!Number.isNaN(n) && n >= 1 && n <= 500) setPageSizeState(n)
   }, [keySelect])
 
-  // После загрузки настроек: для выбора (Авто/число) приоритет у localStorage (последнее действие пользователя), иначе сервер
+  // После загрузки настроек с сервера: приоритет у БД (preferences), иначе localStorage.
+  // Если в localStorage уже «Авто»/«Своё» — не перезаписывать из preferences (важно после ухода на другую страницу и возврата, когда компонент монтируется заново).
   useEffect(() => {
     if (!isLoaded) return
+    const localSelect = getLocalSelect(keySelect)
+    if (localSelect === "auto" || localSelect === "custom") {
+      setPageSizeSelectValueState(localSelect)
+    }
     const raw = preferences[storageKey]
-    const savedSelect = getLocalSelect(keySelect) ?? preferences[keySelect]
+    const savedSelect = preferences[keySelect] ?? localSelect ?? getLocalSelect(keySelect)
     const savedNum =
       typeof raw === "number" && !Number.isNaN(raw)
         ? raw
@@ -61,13 +72,15 @@ export function useTablePageSizePreference(storageKey: string) {
     }
     if (num != null) {
       setPageSizeState(num)
-      setPageSizeSelectValueState(
-        typeof savedSelect === "string"
-          ? savedSelect
-          : PAGE_SIZE_PRESETS.includes(num as (typeof PAGE_SIZE_PRESETS)[number])
-            ? String(num)
-            : "custom"
-      )
+      if (localSelect !== "auto" && localSelect !== "custom") {
+        setPageSizeSelectValueState(
+          typeof savedSelect === "string"
+            ? savedSelect
+            : PAGE_SIZE_PRESETS.includes(num as (typeof PAGE_SIZE_PRESETS)[number])
+              ? String(num)
+              : "custom"
+        )
+      }
     }
     if (typeof savedSelect === "string" && savedSelect === "auto") {
       setPageSizeSelectValueState("auto")
