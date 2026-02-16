@@ -595,6 +595,7 @@ export default function SpecificationsPage() {
           ) : null}
         </SheetContent>
       </Sheet>
+      </div>
     </div>
   )
 }
