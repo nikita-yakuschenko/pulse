@@ -7,7 +7,6 @@ import {
   IconArrowsExchange,
   IconBuildingWarehouse,
   IconCalendar,
-  IconListNumbers,
   IconChevronRight,
   IconFileText,
   IconLayoutDashboard,
@@ -52,6 +51,7 @@ const ENABLED_URLS = new Set([
   "/purchases/sorders",
   "/purchases/payments",
   "/purchases/receipts",
+  "/suppliers",
   "/docs/specifications",
   "/docs/projects",
   "/warehouse/inventory",
@@ -59,6 +59,7 @@ const ENABLED_URLS = new Set([
   "/construction/schedule",
 ])
 
+// Пункты раздела «Закупки и снабжение»: два с вложенностью (коллапсибл), один без — как в разделе Склад
 const procurementCollapsibleItems = [
   {
     title: "Закупки",
@@ -73,14 +74,6 @@ const procurementCollapsibleItems = [
     ],
   },
   {
-    title: "Поставщики",
-    icon: IconUsers,
-    items: [
-      { title: "Договоры", url: "/dashboard/suppliers/contracts" },
-      { title: "Счета", url: "/dashboard/suppliers/invoices" },
-    ],
-  },
-  {
     title: "Документация",
     icon: IconFileText,
     items: [
@@ -89,6 +82,7 @@ const procurementCollapsibleItems = [
     ],
   },
 ]
+const procurementDirectLink = { title: "Поставщики", url: "/suppliers", icon: IconUsers }
 
 const productionItems = [
   { title: "График производства", url: "/dashboard/plan", icon: IconPlanet },
@@ -123,52 +117,67 @@ export function AppSidebar({
           <SidebarGroupLabel>Закупки и снабжение</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {procurementCollapsibleItems.map((item) => {
-                const hasActiveSub = item.items.some((s) => pathname === s.url || (s.url === "/purchases/analytics" && pathname.startsWith("/purchases/analytics")))
-                return (
-                <Collapsible
-                  key={item.title}
-                  asChild
-                  defaultOpen={item.isActive || hasActiveSub}
-                  className="group/collapsible"
-                >
-                  <SidebarMenuItem>
-                    <CollapsibleTrigger asChild>
-                      <SidebarMenuButton tooltip={item.title}>
-                        <item.icon />
-                        <span>{item.title}</span>
-                        <IconChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
-                      </SidebarMenuButton>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent>
-                      <SidebarMenuSub>
-                        {item.items.map((subItem) => {
-                          const enabled = ENABLED_URLS.has(subItem.url)
-                          return (
-                            <SidebarMenuSubItem key={subItem.title}>
-                              {enabled ? (
-                                <SidebarMenuSubButton
-                                  asChild
-                                  isActive={pathname === subItem.url || (subItem.url === "/purchases/analytics" && pathname.startsWith("/purchases/analytics"))}
-                                >
-                                  <Link href={subItem.url}>
+              {procurementCollapsibleItems.map((item, idx) => (
+                <React.Fragment key={item.title}>
+                  {idx === 1 && (
+                    <SidebarMenuItem>
+                      {ENABLED_URLS.has(procurementDirectLink.url) ? (
+                        <SidebarMenuButton asChild tooltip={procurementDirectLink.title} isActive={pathname === procurementDirectLink.url}>
+                          <Link href={procurementDirectLink.url}>
+                            <procurementDirectLink.icon />
+                            <span>{procurementDirectLink.title}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      ) : (
+                        <SidebarMenuButton disabled tooltip={procurementDirectLink.title} className="opacity-50 cursor-not-allowed">
+                          <procurementDirectLink.icon />
+                          <span>{procurementDirectLink.title}</span>
+                        </SidebarMenuButton>
+                      )}
+                    </SidebarMenuItem>
+                  )}
+                  <Collapsible
+                    asChild
+                    defaultOpen={item.isActive || item.items.some((s) => pathname === s.url || (s.url === "/purchases/analytics" && pathname.startsWith("/purchases/analytics")))}
+                    className="group/collapsible"
+                  >
+                    <SidebarMenuItem>
+                      <CollapsibleTrigger asChild>
+                        <SidebarMenuButton tooltip={item.title}>
+                          <item.icon />
+                          <span>{item.title}</span>
+                          <IconChevronRight className="ml-auto transition-transform duration-200 group-data-[state=open]/collapsible:rotate-90" />
+                        </SidebarMenuButton>
+                      </CollapsibleTrigger>
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          {item.items.map((subItem) => {
+                            const enabled = ENABLED_URLS.has(subItem.url)
+                            return (
+                              <SidebarMenuSubItem key={subItem.title}>
+                                {enabled ? (
+                                  <SidebarMenuSubButton
+                                    asChild
+                                    isActive={pathname === subItem.url || (subItem.url === "/purchases/analytics" && pathname.startsWith("/purchases/analytics"))}
+                                  >
+                                    <Link href={subItem.url}>
+                                      <span>{subItem.title}</span>
+                                    </Link>
+                                  </SidebarMenuSubButton>
+                                ) : (
+                                  <SidebarMenuSubButton disabled isActive={false} className="opacity-50 cursor-not-allowed">
                                     <span>{subItem.title}</span>
-                                  </Link>
-                                </SidebarMenuSubButton>
-                              ) : (
-                                <SidebarMenuSubButton disabled isActive={false} className="opacity-50 cursor-not-allowed">
-                                  <span>{subItem.title}</span>
-                                </SidebarMenuSubButton>
-                              )}
-                            </SidebarMenuSubItem>
-                          )
-                        })}
-                      </SidebarMenuSub>
-                    </CollapsibleContent>
-                  </SidebarMenuItem>
-                </Collapsible>
-              )
-              })}
+                                  </SidebarMenuSubButton>
+                                )}
+                              </SidebarMenuSubItem>
+                            )
+                          })}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </SidebarMenuItem>
+                  </Collapsible>
+                </React.Fragment>
+              ))}
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
