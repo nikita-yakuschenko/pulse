@@ -470,15 +470,12 @@ export function ReceiptsTable() {
         </div>
       </div>
 
-      <div ref={tableContainerRef} className="flex flex-col gap-3">
+      <div ref={tableContainerRef} className="rounded-lg border overflow-hidden">
         {loading ? (
-          <div className="overflow-hidden rounded-lg border">
-            <TableSkeleton columnCount={5} rowCount={Math.max(effectivePageSize || autoPageSize || 17, 10)} />
-          </div>
+          <TableSkeleton columnCount={5} rowCount={Math.max(effectivePageSize || autoPageSize || 17, 10)} />
         ) : (
           <>
-            <div className="overflow-hidden rounded-lg border">
-              <Table className="[&_tbody_td]:h-10 [&_tbody_td]:py-1">
+            <Table className="[&_tbody_td]:h-10 [&_tbody_td]:py-1">
                 <TableHeader className="bg-muted">
                   <TableRow>
                     <TableHead className="w-[100px]">Дата</TableHead>
@@ -491,7 +488,7 @@ export function ReceiptsTable() {
                 <TableBody>
                   {currentReceipts.length === 0 ? (
                     <TableRow>
-                      <TableCell colSpan={5} className="h-24! text-center">
+                      <TableCell colSpan={5} className="!h-24 text-center">
                         <div className="flex flex-col items-center justify-center text-muted-foreground">
                           <p className="text-sm">
                             {receipts.length === 0 ? "Поступления не найдены." : "Нет записей на этой странице."}
@@ -502,11 +499,11 @@ export function ReceiptsTable() {
                     </TableRow>
                   ) : (
                     currentReceipts.map((row, idx) => (
-                      <TableRow key={row.Номер ?? row.Дата ?? idx}>
-                        <TableCell className="whitespace-nowrap text-muted-foreground">
+                      <TableRow key={row.Номер ?? row.Дата ?? idx} className="hover:bg-muted/50">
+                        <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                           {row.Дата ? formatDate(row.Дата) : "—"}
                         </TableCell>
-                        <TableCell>
+                        <TableCell className="text-sm">
                           {row.Номер ? (
                             <button
                               type="button"
@@ -515,20 +512,20 @@ export function ReceiptsTable() {
                                 navigator.clipboard.writeText(row.Номер!)
                                 toast.success(`Номер ${row.Номер} скопирован`)
                               }}
-                              className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group text-sm font-mono text-muted-foreground"
+                              className="inline-flex items-center gap-1.5 rounded px-1 -ml-1 hover:bg-muted transition-colors cursor-pointer group font-normal"
                               style={{ fontFamily: "var(--font-ibm-plex-mono), monospace" }}
                               title="Копировать номер"
                             >
                               <span>{row.Номер}</span>
-                              <IconCopy className="h-3.5 w-3.5 text-muted-foreground opacity-50 group-hover:opacity-100 transition-opacity shrink-0" />
+                              <IconCopy className="h-3.5 w-3.5 shrink-0 opacity-60" />
                             </button>
                           ) : (
                             "—"
                           )}
                         </TableCell>
-                        <TableCell>{row.Контрагент ?? "—"}</TableCell>
-                        <TableCell>{row.Организация ?? "—"}</TableCell>
-                        <TableCell className="text-right tabular-nums">
+                        <TableCell className="text-sm">{row.Контрагент ?? "—"}</TableCell>
+                        <TableCell className="text-sm text-muted-foreground">{row.Организация ?? "—"}</TableCell>
+                        <TableCell className="text-sm text-right tabular-nums font-medium">
                           {typeof row.Сумма === "number" ? formatSum(row.Сумма) : (row.Сумма != null ? String(row.Сумма) : "—")}
                         </TableCell>
                       </TableRow>
@@ -536,9 +533,8 @@ export function ReceiptsTable() {
                   )}
                 </TableBody>
               </Table>
-            </div>
 
-            {/* Подвал таблицы — как в требованиях и перемещениях: визуальная консистентность */}
+            {/* Подвал таблицы — как в требованиях-накладных: border-t bg-muted/30 px-4 py-3 */}
             <div className="flex flex-wrap items-center justify-between gap-4 border-t bg-muted/30 px-4 py-3">
               <div className="flex items-center gap-2">
                 <span className="text-sm text-muted-foreground">Записей на странице:</span>
