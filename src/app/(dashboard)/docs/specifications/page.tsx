@@ -361,11 +361,11 @@ export default function SpecificationsPage() {
             ) : null}
           </div>
         </div>
-        <div className="lg:col-span-2 min-w-[280px]">
+        <div className="w-[280px] shrink-0">
           <JollyDateRangePicker
             label="Год, период"
             fieldGroupVariant="filter"
-            className="w-full min-w-0"
+            className="w-full"
             value={
               filterDateFrom || filterDateTo
                 ? {
