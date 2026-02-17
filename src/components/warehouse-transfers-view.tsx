@@ -85,6 +85,7 @@ function ClearFilterButton({ onClick, "aria-label": ariaLabel = "Сбросит�
 const TAB_PREFERENCE_KEY = "warehouse-transfers-tab"
 const TAB_LOCAL_KEY = "pulse-pref:warehouse-transfers-tab"
 const FILTERS_STORAGE_KEY = "pulse:filters:warehouse-requirements"
+const FILTERS_STORAGE_KEY_TRANSFERS = "pulse:filters:warehouse-transfers"
 
 function getInitialTab(): "requirements" | "transfers" | "realizations" {
   if (typeof window === "undefined") return "requirements"
@@ -140,6 +141,51 @@ function getInitialWarehouseFilters(): {
   }
 }
 
+let cachedInitialTransferFilters: {
+  number: string
+  warehouseFrom: string
+  warehouseTo: string
+  dateFrom: string
+  dateTo: string
+  comment: string
+} | null = null
+function getInitialTransferFilters(): {
+  number: string
+  warehouseFrom: string
+  warehouseTo: string
+  dateFrom: string
+  dateTo: string
+  comment: string
+} {
+  if (cachedInitialTransferFilters) return cachedInitialTransferFilters
+  if (typeof window === "undefined")
+    return { number: "", warehouseFrom: "", warehouseTo: "", dateFrom: "", dateTo: "", comment: "" }
+  try {
+    const raw = localStorage.getItem(FILTERS_STORAGE_KEY_TRANSFERS)
+    if (!raw) {
+      cachedInitialTransferFilters = { number: "", warehouseFrom: "", warehouseTo: "", dateFrom: "", dateTo: "", comment: "" }
+      return cachedInitialTransferFilters
+    }
+    const saved = JSON.parse(raw) as Record<string, unknown>
+    if (!saved || typeof saved !== "object") {
+      cachedInitialTransferFilters = { number: "", warehouseFrom: "", warehouseTo: "", dateFrom: "", dateTo: "", comment: "" }
+      return cachedInitialTransferFilters
+    }
+    cachedInitialTransferFilters = {
+      number: typeof saved.number === "string" ? saved.number : "",
+      warehouseFrom: typeof saved.warehouseFrom === "string" ? saved.warehouseFrom : "",
+      warehouseTo: typeof saved.warehouseTo === "string" ? saved.warehouseTo : "",
+      dateFrom: typeof saved.dateFrom === "string" ? saved.dateFrom : "",
+      dateTo: typeof saved.dateTo === "string" ? saved.dateTo : "",
+      comment: typeof saved.comment === "string" ? saved.comment : "",
+    }
+    return cachedInitialTransferFilters
+  } catch {
+    cachedInitialTransferFilters = { number: "", warehouseFrom: "", warehouseTo: "", dateFrom: "", dateTo: "", comment: "" }
+    return cachedInitialTransferFilters
+  }
+}
+
 type DemandRow = {
   Номер?: string
   Дата?: string
@@ -187,14 +233,20 @@ export function WarehouseTransfersView() {
   const [transfers, setTransfers] = React.useState<TransferRow[]>([])
   const [transfersError, setTransfersError] = React.useState<string | null>(null)
   const [transfersLoading, setTransfersLoading] = React.useState(false)
-  const [transferFilterNumber, setTransferFilterNumber] = React.useState("")
+  const initTransferFilters = getInitialTransferFilters()
+  const [transferFilterNumber, setTransferFilterNumber] = React.useState(initTransferFilters.number)
+  const [transferFilterWarehouseFrom, setTransferFilterWarehouseFrom] = React.useState(initTransferFilters.warehouseFrom)
+  const [transferFilterWarehouseTo, setTransferFilterWarehouseTo] = React.useState(initTransferFilters.warehouseTo)
+  const [transferFilterDateFrom, setTransferFilterDateFrom] = React.useState(initTransferFilters.dateFrom)
+  const [transferFilterDateTo, setTransferFilterDateTo] = React.useState(initTransferFilters.dateTo)
+  const [transferFilterComment, setTransferFilterComment] = React.useState(initTransferFilters.comment)
   const [selectedTransferFull, setSelectedTransferFull] = React.useState<TransferFull | null>(null)
   const [transferSheetOpen, setTransferSheetOpen] = React.useState(false)
   const [transferDetailLoading, setTransferDetailLoading] = React.useState(false)
   const [transfersPage, setTransfersPage] = React.useState(1)
 
   // Сброс кэша при размонтировании, чтобы при повторном входе читать актуальный localStorage
-  React.useEffect(() => () => { cachedInitialWarehouseFilters = null }, [])
+  React.useEffect(() => () => { cachedInitialWarehouseFilters = null; cachedInitialTransferFilters = null }, [])
 
   // Сохранение фильтров в localStorage при изменении
   React.useEffect(() => {
@@ -215,12 +267,47 @@ export function WarehouseTransfersView() {
     }
   }, [filterNumber, filterComment, filterWarehouse, filterDateFrom, filterDateTo])
 
+  // Сохранение фильтров перемещений в localStorage
+  React.useEffect(() => {
+    try {
+      if (typeof window === "undefined") return
+      localStorage.setItem(
+        FILTERS_STORAGE_KEY_TRANSFERS,
+        JSON.stringify({
+          number: transferFilterNumber,
+          warehouseFrom: transferFilterWarehouseFrom,
+          warehouseTo: transferFilterWarehouseTo,
+          dateFrom: transferFilterDateFrom,
+          dateTo: transferFilterDateTo,
+          comment: transferFilterComment,
+        })
+      )
+    } catch {
+      // ignore
+    }
+  }, [transferFilterNumber, transferFilterWarehouseFrom, transferFilterWarehouseTo, transferFilterDateFrom, transferFilterDateTo, transferFilterComment])
+
   const uniqueWarehouses = React.useMemo(
     () =>
       [...new Set(demands.map((r) => r.Склад).filter(Boolean) as string[])].sort(
         (a, b) => a.localeCompare(b)
       ),
     [demands]
+  )
+
+  const uniqueWarehousesFrom = React.useMemo(
+    () =>
+      [...new Set(transfers.map((r) => r.СкладОтправитель).filter(Boolean) as string[])].sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [transfers]
+  )
+  const uniqueWarehousesTo = React.useMemo(
+    () =>
+      [...new Set(transfers.map((r) => r.СкладПолучатель).filter(Boolean) as string[])].sort(
+        (a, b) => a.localeCompare(b)
+      ),
+    [transfers]
   )
 
   const tableContainerRef = React.useRef<HTMLDivElement>(null)
@@ -311,8 +398,35 @@ export function WarehouseTransfersView() {
     let list = transfers
     const numQ = transferFilterNumber.trim().toLowerCase()
     if (numQ) list = list.filter((r) => (r.Номер ?? "").toLowerCase().includes(numQ))
+    if (transferFilterWarehouseFrom)
+      list = list.filter((r) => (r.СкладОтправитель ?? "") === transferFilterWarehouseFrom)
+    if (transferFilterWarehouseTo)
+      list = list.filter((r) => (r.СкладПолучатель ?? "") === transferFilterWarehouseTo)
+    const commentQ = transferFilterComment.trim().toLowerCase()
+    if (commentQ)
+      list = list.filter((r) => (r.Комментарий ?? "").toLowerCase().includes(commentQ))
+    const fromTs = parseDateToTime(transferFilterDateFrom || undefined)
+    const toTs = parseDateToTime(transferFilterDateTo || undefined)
+    const toTsEndOfDay = toTs > 0 ? toTs + 24 * 60 * 60 * 1000 - 1 : 0
+    if (fromTs > 0 || toTs > 0) {
+      list = list.filter((r) => {
+        const ts = parseDateToTime(r.Дата)
+        if (fromTs > 0 && ts < fromTs) return false
+        if (toTsEndOfDay > 0 && ts > toTsEndOfDay) return false
+        return true
+      })
+    }
     return [...list].sort((a, b) => parseDateToTime(b.Дата) - parseDateToTime(a.Дата))
-  }, [transfers, transferFilterNumber, parseDateToTime])
+  }, [
+    transfers,
+    transferFilterNumber,
+    transferFilterWarehouseFrom,
+    transferFilterWarehouseTo,
+    transferFilterComment,
+    transferFilterDateFrom,
+    transferFilterDateTo,
+    parseDateToTime,
+  ])
   const totalTransferPages = Math.max(1, Math.ceil(filteredTransfers.length / effectiveTransferPageSize))
   const startTransferIdx = (transfersPage - 1) * effectiveTransferPageSize
   const currentTransfers = filteredTransfers.slice(startTransferIdx, startTransferIdx + effectiveTransferPageSize)
@@ -341,7 +455,14 @@ export function WarehouseTransfersView() {
 
   React.useEffect(() => {
     setTransfersPage(1)
-  }, [transferFilterNumber])
+  }, [
+    transferFilterNumber,
+    transferFilterWarehouseFrom,
+    transferFilterWarehouseTo,
+    transferFilterComment,
+    transferFilterDateFrom,
+    transferFilterDateTo,
+  ])
 
   const handleResetFilters = React.useCallback(() => {
     setFilterNumber("")
@@ -350,6 +471,16 @@ export function WarehouseTransfersView() {
     setFilterDateFrom("")
     setFilterDateTo("")
     setPage(1)
+  }, [])
+
+  const handleResetTransferFilters = React.useCallback(() => {
+    setTransferFilterNumber("")
+    setTransferFilterWarehouseFrom("")
+    setTransferFilterWarehouseTo("")
+    setTransferFilterDateFrom("")
+    setTransferFilterDateTo("")
+    setTransferFilterComment("")
+    setTransfersPage(1)
   }, [])
 
   const activeTabSynced = React.useRef(false)
@@ -729,12 +860,22 @@ export function WarehouseTransfersView() {
           </TabsContent>
 
           <TabsContent value="transfers" className="mt-0">
-            <div className="grid min-h-[5rem] grid-cols-[auto_1fr_auto] gap-x-3 gap-y-1.5 rounded-lg border border-border/50 bg-muted/30 p-3 mb-4" style={{ gridTemplateRows: "auto 32px" }}>
+            {/* Блок фильтров — как во вкладке «Требования-накладные»: две строки, колонки по ширине контента, без растягивания */}
+            <div
+              className="grid min-h-[5rem] grid-cols-[160px_280px_280px_280px_1fr_auto] gap-x-3 gap-y-1.5 rounded-lg border border-border/50 bg-muted/30 p-3 mb-4"
+              style={{ gridTemplateRows: "auto 32px" }}
+            >
               <Label htmlFor="transfers-filter-number" className="text-xs text-muted-foreground">
                 Номер
               </Label>
+              <Label className="text-xs text-muted-foreground">Склад отправитель</Label>
+              <Label className="text-xs text-muted-foreground">Склад получатель</Label>
+              <Label className="text-xs text-muted-foreground">Период</Label>
+              <Label htmlFor="transfers-filter-comment" className="text-xs text-muted-foreground">
+                Комментарий
+              </Label>
               <div />
-              <div />
+
               <div className="relative w-[160px]">
                 <Input
                   id="transfers-filter-number"
@@ -748,13 +889,97 @@ export function WarehouseTransfersView() {
                   <ClearInputButton onClick={() => setTransferFilterNumber("")} aria-label="Очистить номер" />
                 ) : null}
               </div>
-              <div />
-              <div className="flex h-8 justify-self-end">
+              <div className="flex h-8 items-center gap-1">
+                <Select
+                  value={transferFilterWarehouseFrom || "__all__"}
+                  onValueChange={(v) => setTransferFilterWarehouseFrom(v === "__all__" ? "" : v)}
+                >
+                  <SelectTrigger size="sm" className="h-8 min-w-[140px] w-[280px] max-w-[280px]">
+                    <SelectValue placeholder="Все" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">Все</SelectItem>
+                    {uniqueWarehousesFrom.map((wh) => (
+                      <SelectItem key={wh} value={wh}>
+                        {wh}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {transferFilterWarehouseFrom ? (
+                  <ClearFilterButton onClick={() => setTransferFilterWarehouseFrom("")} aria-label="Сбросить склад отправитель" />
+                ) : null}
+              </div>
+              <div className="flex h-8 items-center gap-1">
+                <Select
+                  value={transferFilterWarehouseTo || "__all__"}
+                  onValueChange={(v) => setTransferFilterWarehouseTo(v === "__all__" ? "" : v)}
+                >
+                  <SelectTrigger size="sm" className="h-8 min-w-[140px] w-[280px] max-w-[280px]">
+                    <SelectValue placeholder="Все" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__all__">Все</SelectItem>
+                    {uniqueWarehousesTo.map((wh) => (
+                      <SelectItem key={wh} value={wh}>
+                        {wh}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {transferFilterWarehouseTo ? (
+                  <ClearFilterButton onClick={() => setTransferFilterWarehouseTo("")} aria-label="Сбросить склад получатель" />
+                ) : null}
+              </div>
+              <div className="w-[280px] min-w-[280px]">
+                <JollyDateRangePicker
+                  label=""
+                  fieldGroupVariant="filter"
+                  className="w-full min-w-0"
+                  value={
+                    transferFilterDateFrom || transferFilterDateTo
+                      ? {
+                          start: transferFilterDateFrom
+                            ? parseDate(transferFilterDateFrom)
+                            : parseDate(transferFilterDateTo!),
+                          end: transferFilterDateTo
+                            ? parseDate(transferFilterDateTo)
+                            : parseDate(transferFilterDateFrom!),
+                        }
+                      : null
+                  }
+                  onChange={(range) => {
+                    if (!range) {
+                      setTransferFilterDateFrom("")
+                      setTransferFilterDateTo("")
+                      return
+                    }
+                    const fmt = (d: { year: number; month: number; day: number }) =>
+                      `${d.year}-${String(d.month).padStart(2, "0")}-${String(d.day).padStart(2, "0")}`
+                    setTransferFilterDateFrom(fmt(range.start))
+                    setTransferFilterDateTo(fmt(range.end))
+                  }}
+                />
+              </div>
+              <div className="relative min-w-0">
+                <Input
+                  id="transfers-filter-comment"
+                  placeholder="Комментарий"
+                  value={transferFilterComment}
+                  onChange={(e) => setTransferFilterComment(e.target.value)}
+                  onKeyDown={(e) => e.key === "Enter" && setTransfersPage(1)}
+                  className="h-8 w-full max-w-[320px] pr-7"
+                />
+                {transferFilterComment ? (
+                  <ClearInputButton onClick={() => setTransferFilterComment("")} aria-label="Очистить комментарий" />
+                ) : null}
+              </div>
+              <div className="flex h-8 items-center justify-self-end">
                 <Button
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => { setTransferFilterNumber(""); setTransfersPage(1) }}
+                  onClick={handleResetTransferFilters}
                   className="h-8"
                 >
                   Сбросить
@@ -789,7 +1014,7 @@ export function WarehouseTransfersView() {
                       <EmptyDescription>
                         {transfers.length === 0
                           ? "Нет данных. Проверьте настройки интеграции 1С."
-                          : "Измените параметры фильтра или сбросьте его."}
+                          : "Измените параметры фильтров или сбросьте их."}
                       </EmptyDescription>
                     </EmptyHeader>
                   </Empty>
