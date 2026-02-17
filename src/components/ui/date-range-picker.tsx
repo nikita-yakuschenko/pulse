@@ -18,6 +18,7 @@ import {
   Text,
 } from "react-aria-components"
 import {
+  CalendarDate,
   endOfMonth,
   endOfWeek,
   getLocalTimeZone,
@@ -49,11 +50,24 @@ const QuickSelectContext = React.createContext<
   ((range: QuickSelectRange | null) => void) | null
 >(null)
 
+type QuickSelectVariant = "default" | "planning"
+const QuickSelectVariantContext = React.createContext<QuickSelectVariant>("default")
+
 const LOCALE = "ru"
+
+function getQuarterStartEnd(d: CalendarDate) {
+  const q = Math.ceil(d.month / 3)
+  const startMonth = (q - 1) * 3 + 1
+  const endMonth = q * 3
+  const start = new CalendarDate(d.year, startMonth, 1)
+  const end = endOfMonth(new CalendarDate(d.year, endMonth, 1))
+  return { start, end }
+}
 
 function QuickSelectBadges() {
   const onQuickSelect = React.useContext(QuickSelectContext)
   const overlayState = React.useContext(OverlayTriggerStateContext)
+  const variant = React.useContext(QuickSelectVariantContext)
   if (!onQuickSelect) return null
   const handle = (start: AriaDateValue, end: AriaDateValue) => {
     onQuickSelect({ start, end })
@@ -64,6 +78,51 @@ function QuickSelectBadges() {
     overlayState?.close()
   }
   const t = today(getLocalTimeZone())
+  const btn =
+    "rounded-md border border-input bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
+  const resetBtn = cn(
+    btn,
+    "inline-flex items-center gap-1 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-800/60 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
+  )
+
+  if (variant === "planning") {
+    const thisMonthStart = startOfMonth(t)
+    const thisMonthEnd = endOfMonth(t)
+    const thisQuarter = getQuarterStartEnd(t)
+    const nextMonthStart = startOfMonth(t.add({ months: 1 }))
+    const nextMonthEnd = endOfMonth(t.add({ months: 1 }))
+    const nextQuarter = getQuarterStartEnd(t.add({ months: 3 }))
+    const lastMonthStart = startOfMonth(t.subtract({ months: 1 }))
+    const lastMonthEnd = endOfMonth(t.subtract({ months: 1 }))
+    const lastQuarter = getQuarterStartEnd(t.subtract({ months: 3 }))
+    return (
+      <div className="flex flex-wrap gap-1.5">
+        <button type="button" className={btn} onClick={() => handle(thisMonthStart, thisMonthEnd)}>
+          Текущий месяц
+        </button>
+        <button type="button" className={btn} onClick={() => handle(thisQuarter.start, thisQuarter.end)}>
+          Текущий квартал
+        </button>
+        <button type="button" className={btn} onClick={() => handle(nextMonthStart, nextMonthEnd)}>
+          Следующий месяц
+        </button>
+        <button type="button" className={btn} onClick={() => handle(nextQuarter.start, nextQuarter.end)}>
+          Следующий квартал
+        </button>
+        <button type="button" className={btn} onClick={() => handle(lastMonthStart, lastMonthEnd)}>
+          Прошлый месяц
+        </button>
+        <button type="button" className={btn} onClick={() => handle(lastQuarter.start, lastQuarter.end)}>
+          Прошлый квартал
+        </button>
+        <button type="button" className={resetBtn} onClick={handleReset}>
+          <IconX aria-hidden className="size-3.5 shrink-0" />
+          Сбросить
+        </button>
+      </div>
+    )
+  }
+
   const yesterday = t.subtract({ days: 1 })
   const thisWeekStart = startOfWeek(t, LOCALE)
   const thisWeekEnd = endOfWeek(t, LOCALE)
@@ -73,9 +132,6 @@ function QuickSelectBadges() {
   const lastWeekEnd = endOfWeek(lastWeekStart, LOCALE)
   const lastMonthStart = startOfMonth(t.subtract({ months: 1 }))
   const lastMonthEnd = endOfMonth(t.subtract({ months: 1 }))
-
-  const btn =
-    "rounded-md border border-input bg-transparent px-2 py-1 text-xs font-medium text-muted-foreground hover:bg-accent hover:text-accent-foreground transition-colors"
   return (
     <div className="flex flex-wrap gap-1.5">
       <button type="button" className={btn} onClick={() => handle(t, t)}>
@@ -96,14 +152,7 @@ function QuickSelectBadges() {
       <button type="button" className={btn} onClick={() => handle(lastMonthStart, lastMonthEnd)}>
         Прошлый месяц
       </button>
-      <button
-        type="button"
-        className={cn(
-          btn,
-          "inline-flex items-center gap-1 border-red-200 text-red-600 hover:bg-red-50 hover:text-red-700 dark:border-red-800/60 dark:text-red-400 dark:hover:bg-red-950/40 dark:hover:text-red-300"
-        )}
-        onClick={handleReset}
-      >
+      <button type="button" className={resetBtn} onClick={handleReset}>
         <IconX aria-hidden className="size-3.5 shrink-0" />
         Сбросить
       </button>
@@ -195,6 +244,8 @@ interface JollyDateRangePickerProps<T extends AriaDateValue>
   fieldGroupVariant?: "ghost" | "default" | "filter"
   /** Текст при пустом значении (вместо формата «ДД . ММ . ГГГГ – ДД . ММ . ГГГГ») */
   placeholder?: string
+  /** "planning" — бейджи: текущий/следующий/прошлый месяц и квартал (для спецификаций) */
+  quickSelectVariant?: QuickSelectVariant
 }
 
 function JollyDateRangePicker<T extends AriaDateValue>({
@@ -204,6 +255,7 @@ function JollyDateRangePicker<T extends AriaDateValue>({
   className,
   fieldGroupVariant = "ghost",
   placeholder = "Выберите дату или период",
+  quickSelectVariant = "default",
   ...props
 }: JollyDateRangePickerProps<T>) {
   const isEmpty = props.value == null
@@ -219,6 +271,7 @@ function JollyDateRangePicker<T extends AriaDateValue>({
     [props.onChange]
   )
   return (
+    <QuickSelectVariantContext.Provider value={quickSelectVariant}>
     <QuickSelectContext.Provider value={onQuickSelect}>
     <DateRangePicker
       className={composeRenderProps(className, (className) =>
@@ -295,6 +348,7 @@ function JollyDateRangePicker<T extends AriaDateValue>({
       </DatePickerContent>
     </DateRangePicker>
     </QuickSelectContext.Provider>
+    </QuickSelectVariantContext.Provider>
   )
 }
 
