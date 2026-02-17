@@ -230,8 +230,12 @@ function JollyDateRangePicker<T extends AriaDateValue>({
       )}
       {...props}
     >
-      {label ? <Label>{label}</Label> : null}
-      <div className="relative">
+      {label ? (
+        <Label className={fieldGroupVariant === "filter" ? "text-xs text-muted-foreground" : undefined}>
+          {label}
+        </Label>
+      ) : null}
+      <div className={fieldGroupVariant === "filter" ? "relative mt-1" : "relative"}>
         <FieldGroup variant={fieldGroupVariant}>
           <div
             className={cn(
