@@ -171,15 +171,15 @@ export default function SpecificationsPage() {
         const toTsEnd = dateTo ? new Date(dateTo).getTime() + 24 * 60 * 60 * 1000 - 1 : 0
         if (fromTs > 0 || toTsEnd > 0) {
           filtered = filtered.filter((row: SpecificationRecord) => {
-            const ts = parseSpecDate(row.ДатаУтверждения)
+            const ts = parseSpecDate(row.ДатаПоставки)
             if (fromTs > 0 && ts < fromTs) return false
             if (toTsEnd > 0 && ts > toTsEnd) return false
             return true
           })
         }
         const sorted = [...filtered].sort((a, b) => {
-          const dateA = parseSpecDate(a.ДатаУтверждения)
-          const dateB = parseSpecDate(b.ДатаУтверждения)
+          const dateA = parseSpecDate(a.ДатаПоставки)
+          const dateB = parseSpecDate(b.ДатаПоставки)
           return dateB - dateA
         })
         setList(sorted)
@@ -365,6 +365,7 @@ export default function SpecificationsPage() {
           <JollyDateRangePicker
             label="Год, период"
             fieldGroupVariant="filter"
+            quickSelectVariant="planning"
             className="w-full"
             value={
               filterDateFrom || filterDateTo
