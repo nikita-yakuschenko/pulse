@@ -1,5 +1,6 @@
 // Prisma schema for Модуль.Пульс
 // Better Auth models + first phase entities
+// Prisma 7: url/directUrl в prisma.config.ts; клиент через adapter в PrismaClient.
 
 generator client {
   provider = "prisma-client-js"
@@ -7,7 +8,7 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  url      = env("DATABASE_URL")
+  schemas  = ["public", "auth"]
 }
 
 // Better Auth models
@@ -23,6 +24,7 @@ model User {
   accounts      Account[]
 
   @@unique([email])
+  @@schema("public")
   @@map("user")
 }
 
@@ -38,6 +40,7 @@ model Session {
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([token])
+  @@schema("public")
   @@map("session")
 }
 
@@ -57,6 +60,7 @@ model Account {
   createdAt             DateTime
   updatedAt             DateTime
 
+  @@schema("public")
   @@map("account")
 }
 
@@ -68,6 +72,7 @@ model Verification {
   createdAt  DateTime?
   updatedAt  DateTime?
 
+  @@schema("public")
   @@map("verification")
 }
 
@@ -78,6 +83,7 @@ model MfaCode {
   expiresAt DateTime
   createdAt DateTime @default(now())
 
+  @@schema("public")
   @@map("mfa_code")
 }
 
@@ -91,6 +97,7 @@ model Plan {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@schema("public")
   @@map("plan")
 }
 
@@ -102,6 +109,7 @@ model Specification {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@schema("public")
   @@map("specification")
 }
 
@@ -115,6 +123,7 @@ model Balance {
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
+  @@schema("public")
   @@map("balance")
 }
 
@@ -125,6 +134,7 @@ model Warehouse {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
+  @@schema("public")
   @@map("warehouse")
 }
 
@@ -136,6 +146,7 @@ model Supplier {
   updatedAt DateTime @updatedAt
   sorders   Sorder[]
 
+  @@schema("public")
   @@map("supplier")
 }
 
@@ -149,6 +160,7 @@ model Sorder {
   updatedAt  DateTime @updatedAt
   supplier   Supplier @relation(fields: [supplierId], references: [id])
 
+  @@schema("public")
   @@map("sorder")
 }
 
@@ -161,6 +173,7 @@ model Payment {
   createdAt  DateTime @default(now())
   updatedAt  DateTime @updatedAt
 
+  @@schema("public")
   @@map("payment")
 }
 
@@ -177,6 +190,7 @@ model ReorderPoint {
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
+  @@schema("public")
   @@map("reorder_point")
 }
 
@@ -193,6 +207,7 @@ model MaterialGroupPreference {
   updatedAt DateTime @updatedAt
 
   @@unique([userId, groupCode, section])
+  @@schema("public")
   @@map("material_group_preference")
 }
 
@@ -208,6 +223,7 @@ model MaterialPreference {
   updatedAt    DateTime @updatedAt
 
   @@unique([userId, materialCode, section])
+  @@schema("public")
   @@map("material_preference")
 }
 
@@ -221,6 +237,7 @@ model SearchExclusion {
   createdAt DateTime @default(now())
 
   @@unique([userId, groupCode, section])
+  @@schema("public")
   @@map("search_exclusion")
 }
 
@@ -236,6 +253,7 @@ model MrpReport {
   specifications MrpReportSpecification[]
   results        MrpReportResult[]
 
+  @@schema("public")
   @@map("mrp_report")
 }
 
@@ -247,6 +265,7 @@ model MrpReportSpecification {
   specificationName  String?   // Наименование для отображения
   report             MrpReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
+  @@schema("public")
   @@map("mrp_report_specification")
 }
 
@@ -263,5 +282,130 @@ model MrpReportResult {
   purchaseQty       Decimal   // К закупке = max(0, потребность - остаток)
   report            MrpReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
 
+  @@schema("public")
   @@map("mrp_report_result")
+}
+
+// --- График монтажа (Строительная часть) ---
+
+// Структурированный адрес (DaData / ручной ввод). Чтение по address_id из БД, без повторных вызовов DaData.
+model Address {
+  id        String   @id @default(cuid())
+  region    String?
+  district  String?
+  locality  String?
+  street    String?
+  house     String?
+  fullText  String?
+  kladrCode String?
+  fiasId    String?
+  isCustom  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contracts          Contract[]
+  mountScheduleEntries MountScheduleEntry[]
+
+  @@schema("public")
+  @@map("address")
+}
+
+// Прорабы (foreman)
+model Employee {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contracts          Contract[]
+  mountScheduleEntries MountScheduleEntry[]
+
+  @@schema("public")
+  @@map("employee")
+}
+
+// Типовые проекты домов
+model ProjectCatalog {
+  id        String   @id @default(cuid())
+  name      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  contracts          Contract[]
+  mountScheduleEntries MountScheduleEntry[]
+
+  @@schema("public")
+  @@map("project_catalog")
+}
+
+// Договоры/сделки (для автозаполнения в графике монтажа)
+model Contract {
+  id             String    @id @default(cuid())
+  contractNumber String
+  houseNo        Int?
+  addressId      String?
+  buildType      String?
+  projectId      String?
+  foremanId      String?
+  amount         Decimal?
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+
+  address  Address?       @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  project  ProjectCatalog? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  foreman  Employee?      @relation(fields: [foremanId], references: [id], onDelete: SetNull)
+  mountScheduleEntries MountScheduleEntry[]
+
+  @@schema("public")
+  @@map("contract")
+}
+
+// Запись графика монтажа (одна строка = объект/дом)
+model MountScheduleEntry {
+  id                      String    @id @default(cuid())
+  planMonth               DateTime  // Первое число месяца
+  contractId              String?
+  contractNumber          String
+  houseNo                Int?
+  addressId               String?
+  buildType               String?
+  projectId               String?
+  projectName             String?
+  foremanId               String?
+  foremanName             String?
+  amountCurrent           Decimal?
+  amountNext              Decimal?
+  stage                   String?
+  escrowEgrnStatus        String?
+  productionStatus        String?
+  statusSummaryOverride   String?
+  productionLaunchDate    DateTime?
+  productionNote          String?
+  pilesDate               DateTime?
+  pilesRaw                String?
+  shipmentDate            DateTime?
+  shipmentRaw             String?
+  windowsRaw              String?
+  windowsInstallRaw       String?
+  roofRaw                 String?
+  roofWorkDate            DateTime?
+  roofWorkRaw             String?
+  electricRaw             String?
+  plumbingRaw             String?
+  screedRaw               String?
+  exteriorRaw             String?
+  handoverDate            DateTime?
+  handoverRaw             String?
+  comment                 String?
+  sortOrder               Int?
+  createdAt               DateTime  @default(now())
+  updatedAt               DateTime  @updatedAt
+
+  contract Contract?  @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  address  Address?  @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  project  ProjectCatalog? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  foreman  Employee?  @relation(fields: [foremanId], references: [id], onDelete: SetNull)
+
+  @@schema("public")
+  @@map("mount_schedule_entry")
 }
