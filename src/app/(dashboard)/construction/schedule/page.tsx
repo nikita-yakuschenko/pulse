@@ -250,7 +250,7 @@ export default function SchedulePage() {
           </Button>
         </div>
         <div className="mt-3 flex flex-col gap-3">
-          <div className="grid min-h-[5rem] grid-cols-1 gap-x-3 gap-y-1.5 rounded-lg border border-border/50 bg-muted/30 p-3 sm:grid-cols-2 lg:grid-cols-[auto_auto_auto_auto_1fr_auto]">
+          <div className="grid min-h-20 grid-cols-1 gap-x-3 gap-y-1.5 rounded-lg border border-border/50 bg-muted/30 p-3 sm:grid-cols-2 lg:grid-cols-[auto_auto_auto_auto_1fr_auto]">
             <div className="space-y-1">
               <Label className="text-xs text-muted-foreground">Месяц</Label>
               <Select value={filterPlanMonth} onValueChange={(v) => { setFilterPlanMonth(v); setPage(1) }}>
@@ -461,7 +461,7 @@ function ScheduleTable({
         <TableBody>
           {items.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={11} className="!h-24 text-center">
+              <TableCell colSpan={11} className="h-24! text-center">
                 <span className="text-muted-foreground text-sm">Нет записей за выбранный месяц. Измените фильтры или добавьте запись.</span>
               </TableCell>
             </TableRow>
