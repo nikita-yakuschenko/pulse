@@ -8,6 +8,8 @@ FROM node:20-alpine AS build
 WORKDIR /app
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
+# Генерация Prisma Client до сборки (нужно для type-check и для src/lib/db)
+RUN npx prisma generate
 # Next.js читает .env.production при сборке — NEXT_PUBLIC_* попадут в бандл
 RUN mkdir -p public
 RUN npm run build
