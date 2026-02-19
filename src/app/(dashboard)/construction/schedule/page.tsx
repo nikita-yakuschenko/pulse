@@ -78,7 +78,10 @@ function getDefaultPlanMonth(): string {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`
 }
 
+type ScheduleTab = "schedule" | "planning"
+
 export default function SchedulePage() {
+  const [scheduleTab, setScheduleTab] = useState<ScheduleTab>("schedule")
   const [items, setItems] = useState<MountScheduleEntryApi[]>([])
   const [total, setTotal] = useState(0)
   const [loading, setLoading] = useState(true)
@@ -122,6 +125,7 @@ export default function SchedulePage() {
     try {
       const params = new URLSearchParams()
       params.set("planMonth", filterPlanMonth)
+      params.set("tab", scheduleTab)
       if (filterAddress && filterAddress !== ADDRESS_ALL) params.set("address", filterAddress)
       if (filterType && filterType !== TYPE_ALL) params.set("type", filterType)
       if (filterForeman && filterForeman !== FOREMAN_ALL) params.set("foreman", filterForeman)
@@ -142,7 +146,7 @@ export default function SchedulePage() {
     } finally {
       setLoading(false)
     }
-  }, [filterPlanMonth, filterAddress, filterType, filterForeman, page, effectivePageSize])
+  }, [scheduleTab, filterPlanMonth, filterAddress, filterType, filterForeman, page, effectivePageSize])
 
   const fetchAddresses = useCallback(async () => {
     try {
@@ -249,6 +253,18 @@ export default function SchedulePage() {
             Добавить
           </Button>
         </div>
+        <Tabs value={scheduleTab} onValueChange={(v) => { setScheduleTab(v as ScheduleTab); setPage(1) }} className="mt-3">
+          <TabsList className="grid w-full max-w-md grid-cols-2">
+            <TabsTrigger value="schedule">График монтажа</TabsTrigger>
+            <TabsTrigger value="planning">Планирование работ</TabsTrigger>
+          </TabsList>
+          <TabsContent value="schedule" className="mt-0">
+            <p className="text-sm text-muted-foreground">Записи с утверждённой датой начала монтажа.</p>
+          </TabsContent>
+          <TabsContent value="planning" className="mt-0">
+            <p className="text-sm text-muted-foreground">Записи без утверждённой даты монтажа. Укажите дату в карточке — запись попадёт в график.</p>
+          </TabsContent>
+        </Tabs>
         <div className="mt-3 flex flex-col gap-3">
           <div className="grid min-h-20 grid-cols-1 gap-x-3 gap-y-1.5 rounded-lg border border-border/50 bg-muted/30 p-3 sm:grid-cols-2 lg:grid-cols-[auto_auto_auto_auto_1fr_auto]">
             <div className="space-y-1">
@@ -320,7 +336,7 @@ export default function SchedulePage() {
           <div ref={tableContainerRef} className="flex flex-col gap-3">
             <div className="rounded-md border overflow-hidden">
               {loading ? (
-                <TableSkeleton columnCount={11} rowCount={10} />
+                <TableSkeleton columnCount={12} rowCount={10} />
               ) : (
                 <ScheduleTable
                   items={items}
@@ -412,7 +428,7 @@ export default function SchedulePage() {
       <Sheet open={sheetOpen} onOpenChange={handleSheetClose}>
         <SheetContent
           side="right"
-          className="flex flex-col p-0 overflow-hidden border-l w-full sm:max-w-xl"
+          className="flex flex-col p-0 overflow-hidden border-l"
           showCloseButton={false}
         >
           <ScheduleSheet
@@ -447,11 +463,12 @@ function ScheduleTable({
           <TableRow>
             <TableHead>Адрес</TableHead>
             <TableHead>Договор</TableHead>
-            <TableHead className="text-right">№ дома</TableHead>
+            <TableHead className="text-right">№ комплекта</TableHead>
             <TableHead>Тип</TableHead>
             <TableHead>Проект</TableHead>
             <TableHead>Прораб</TableHead>
             <TableHead className="text-right">Сумма</TableHead>
+            <TableHead>Старт монтажа</TableHead>
             <TableHead>Отгрузка</TableHead>
             <TableHead>Кровля</TableHead>
             <TableHead>Сдача</TableHead>
@@ -461,7 +478,7 @@ function ScheduleTable({
         <TableBody>
           {items.length === 0 ? (
             <TableRow>
-              <TableCell colSpan={11} className="h-24! text-center">
+              <TableCell colSpan={12} className="h-24! text-center">
                 <span className="text-muted-foreground text-sm">Нет записей за выбранный месяц. Измените фильтры или добавьте запись.</span>
               </TableCell>
             </TableRow>
@@ -477,7 +494,7 @@ function ScheduleTable({
                 </TableCell>
                 <TableCell>{row.contractNumber}</TableCell>
                 <TableCell className="text-right tabular-nums">
-                  {row.houseNo ?? "—"}
+                  {row.kitNo ?? "—"}
                 </TableCell>
                 <TableCell>
                   <Badge
@@ -502,6 +519,9 @@ function ScheduleTable({
                 <TableCell>{row.foremanName ?? "—"}</TableCell>
                 <TableCell className="text-right tabular-nums">
                   {formatAmount(row.amountDisplay)}
+                </TableCell>
+                <TableCell className="tabular-nums text-muted-foreground text-xs">
+                  {row.mountStartDate ?? "—"}
                 </TableCell>
                 <TableCell className="tabular-nums text-muted-foreground text-xs">
                   {row.shipmentDate ?? "—"}
@@ -547,7 +567,7 @@ function ScheduleSheet({
   const [planMonth, setPlanMonth] = useState(entry?.planMonth ?? getDefaultPlanMonth())
   const [contractId, setContractId] = useState(entry?.contractId ?? "")
   const [contractNumber, setContractNumber] = useState(entry?.contractNumber ?? "")
-  const [houseNo, setHouseNo] = useState<number | "">(entry?.houseNo ?? "")
+  const [kitNo, setKitNo] = useState<number | "">(entry?.kitNo ?? "")
   const [addressId, setAddressId] = useState(entry?.addressId ?? "")
   const [addressDisplay, setAddressDisplay] = useState(entry?.addressDisplay ?? "")
   const [addressSuggestQuery, setAddressSuggestQuery] = useState("")
@@ -560,6 +580,7 @@ function ScheduleSheet({
   const [amountCurrent, setAmountCurrent] = useState(entry?.amountCurrent != null ? String(entry.amountCurrent) : "")
   const [amountNext, setAmountNext] = useState(entry?.amountNext != null ? String(entry.amountNext) : "")
   const [productionLaunchDate, setProductionLaunchDate] = useState(entry?.productionLaunchDate ?? "")
+  const [mountStartDate, setMountStartDate] = useState(entry?.mountStartDate ?? "")
   const [shipmentDate, setShipmentDate] = useState(entry?.shipmentDate ?? "")
   const [roofWorkDate, setRoofWorkDate] = useState(entry?.roofWorkDate ?? "")
   const [handoverDate, setHandoverDate] = useState(entry?.handoverDate ?? "")
@@ -600,13 +621,21 @@ function ScheduleSheet({
       setAddressSuggestions([])
       return
     }
+    // Используем поля с типом (область, район, деревня, улица) для корректного отображения
+    const region = (d.region_with_type ?? d.region) as string | undefined
+    const district = (d.area_with_type ?? d.area ?? d.city_district) as string | undefined
+    const locality = (d.settlement_with_type ?? d.city_with_type ?? d.city ?? d.settlement) as string | undefined
+    const street = (d.street_with_type ?? d.street) as string | undefined
+    const house = (d.house ?? d.block) as string | undefined
+    const parts = [region, district, locality, street, house].filter(Boolean) as string[]
+    const fullText = parts.length > 0 ? parts.join(", ") : ((d.value ?? d.unrestricted_value) as string | undefined)
     const body: AddressCreateBody = {
-      region: (d.region ?? d.region_with_type) as string | undefined,
-      district: (d.area ?? d.city_district) as string | undefined,
-      locality: (d.city ?? d.settlement) as string | undefined,
-      street: (d.street ?? d.street_with_type) as string | undefined,
-      house: (d.house ?? d.block) as string | undefined,
-      fullText: (d.value ?? d.unrestricted_value) as string | undefined,
+      region,
+      district,
+      locality,
+      street,
+      house,
+      fullText,
       kladrCode: d.kladr_id as string | undefined,
       fiasId: d.fias_id as string | undefined,
       isCustom: false,
@@ -631,7 +660,7 @@ function ScheduleSheet({
   const onSelectContract = useCallback((c: ContractApi) => {
     setContractId(c.id)
     setContractNumber(c.contractNumber)
-    if (c.houseNo != null) setHouseNo(c.houseNo)
+    if (c.kitNo != null) setKitNo(c.kitNo)
     if (c.addressId) {
       setAddressId(c.addressId)
       setAddressDisplay(c.addressDisplay ?? "")
@@ -660,7 +689,7 @@ function ScheduleSheet({
         planMonth,
         contractId: contractId || undefined,
         contractNumber: cnTrim,
-        houseNo: houseNo === "" ? undefined : Number(houseNo),
+        kitNo: kitNo === "" ? undefined : Number(kitNo),
         addressId: addressId || undefined,
         buildType: buildType || undefined,
         projectId: projectId || undefined,
@@ -670,6 +699,7 @@ function ScheduleSheet({
         amountCurrent: amountCurrent === "" ? undefined : parseFloat(amountCurrent),
         amountNext: amountNext === "" ? undefined : parseFloat(amountNext),
         productionLaunchDate: productionLaunchDate || undefined,
+        mountStartDate: mountStartDate || undefined,
         shipmentDate: shipmentDate || undefined,
         roofWorkDate: roofWorkDate || undefined,
         handoverDate: handoverDate || undefined,
@@ -713,7 +743,7 @@ function ScheduleSheet({
     planMonth,
     contractId,
     contractNumber,
-    houseNo,
+    kitNo,
     addressId,
     buildType,
     projectId,
@@ -723,6 +753,7 @@ function ScheduleSheet({
     amountCurrent,
     amountNext,
     productionLaunchDate,
+    mountStartDate,
     shipmentDate,
     roofWorkDate,
     handoverDate,
@@ -800,11 +831,11 @@ function ScheduleSheet({
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-2">
-                  <Label>№ дома</Label>
+                  <Label>№ комплекта</Label>
                   <Input
                     type="number"
-                    value={houseNo === "" ? "" : houseNo}
-                    onChange={(e) => setHouseNo(e.target.value === "" ? "" : Number(e.target.value))}
+                    value={kitNo === "" ? "" : kitNo}
+                    onChange={(e) => setKitNo(e.target.value === "" ? "" : Number(e.target.value))}
                     className="h-9"
                   />
                 </div>
@@ -834,9 +865,6 @@ function ScheduleSheet({
                       </li>
                     ))}
                   </ul>
-                )}
-                {addressId && addressDisplay && (
-                  <p className="text-xs text-muted-foreground">Выбран: {addressDisplay}</p>
                 )}
               </div>
               <div className="grid grid-cols-2 gap-3">
@@ -914,6 +942,17 @@ function ScheduleSheet({
               </div>
             </TabsContent>
             <TabsContent value="production" className="space-y-4 pt-4">
+              <div className="space-y-2">
+                <Label>Дата начала монтажа</Label>
+                <Input
+                  type="date"
+                  value={mountStartDate}
+                  onChange={(e) => setMountStartDate(e.target.value)}
+                  min="2020-01-01"
+                  className="h-9"
+                  placeholder="Утверждённая дата — запись попадёт в график монтажа"
+                />
+              </div>
               <div className="space-y-2">
                 <Label>Дата запуска в производство</Label>
                 <Input

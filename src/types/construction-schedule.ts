@@ -16,7 +16,7 @@ export interface ScheduleStages {
 }
 
 /** Объект графика (одна строка = один заказ/дом) — мок/legacy */
-export interface ConstructionObject {
+export interface ConstructionObjectLegacy {
   id: string
   territoryId: string
   location: string           // населённый пункт
@@ -30,6 +30,44 @@ export interface ConstructionObject {
   stages: ScheduleStages
   statusComment: string      // статус/комментарий
   documentNumber?: string    // № заявки
+}
+
+/** Объект строительства (раздел Объекты, БД: construction_object) */
+export interface ConstructionObjectApi {
+  id: string
+  addressId?: string | null
+  contractId?: string | null
+  contractNumber: string
+  kitNo?: number | null
+  buildType?: string | null
+  projectId?: string | null
+  projectName?: string | null
+  foremanId?: string | null
+  foremanName?: string | null
+  amountCurrent?: number | null
+  amountNext?: number | null
+  contractStartDate?: string | null // YYYY-MM-DD
+  comment?: string | null
+  addressDisplay?: string | null
+  createdAt?: string
+  updatedAt?: string
+}
+
+/** Тело создания/обновления объекта (POST/PATCH /api/construction/objects) */
+export interface ConstructionObjectCreateBody {
+  addressId?: string | null
+  contractId?: string | null
+  contractNumber: string
+  kitNo?: number | null
+  buildType?: string | null
+  projectId?: string | null
+  projectName?: string | null
+  foremanId?: string | null
+  foremanName?: string | null
+  amountCurrent?: number | null
+  amountNext?: number | null
+  contractStartDate?: string | null
+  comment?: string | null
 }
 
 /** Территория (группировка по зонам) */
@@ -72,7 +110,7 @@ export interface MountScheduleEntryApi {
   planMonth: string
   contractId?: string | null
   contractNumber: string
-  houseNo?: number | null
+  kitNo?: number | null
   addressId?: string | null
   addressDisplay?: string | null
   buildType?: string | null
@@ -87,6 +125,7 @@ export interface MountScheduleEntryApi {
   shipmentDate?: string | null
   roofWorkDate?: string | null
   handoverDate?: string | null
+  mountStartDate?: string | null // Утверждённая дата начала монтажа
   statusSummary?: string | null
   statusSummaryOverride?: string | null
   productionStatus?: string | null
@@ -101,7 +140,7 @@ export interface MountScheduleEntryCreateBody {
   planMonth: string
   contractId?: string | null
   contractNumber: string
-  houseNo?: number | null
+  kitNo?: number | null
   addressId?: string | null
   address?: AddressCreateBody | null
   buildType?: string | null
@@ -116,6 +155,7 @@ export interface MountScheduleEntryCreateBody {
   shipmentDate?: string | null
   roofWorkDate?: string | null
   handoverDate?: string | null
+  mountStartDate?: string | null
   statusSummaryOverride?: string | null
   comment?: string | null
   sortOrder?: number | null
@@ -168,7 +208,7 @@ export interface ProjectCatalogApi {
 export interface ContractApi {
   id: string
   contractNumber: string
-  houseNo?: number | null
+  kitNo?: number | null
   addressId?: string | null
   addressDisplay?: string | null
   buildType?: string | null

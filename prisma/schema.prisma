@@ -303,11 +303,41 @@ model Address {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  contracts          Contract[]
+  contracts           Contract[]
+  constructionObjects ConstructionObject[]
   mountScheduleEntries MountScheduleEntry[]
 
   @@schema("public")
   @@map("address")
+}
+
+// Объект строительства (создаётся в разделе Объекты; опорная дата — contractStartDate)
+model ConstructionObject {
+  id                  String    @id @default(cuid())
+  addressId           String?
+  contractId          String?
+  contractNumber      String
+  kitNo               Int?   // Номер домокомплекта (комплекта)
+  buildType           String?
+  projectId           String?
+  projectName         String?
+  foremanId           String?
+  foremanName         String?
+  amountCurrent       Decimal?
+  amountNext          Decimal?
+  contractStartDate   DateTime? // Дата начала строительства (старта по договору)
+  comment             String?
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  address  Address?   @relation(fields: [addressId], references: [id], onDelete: SetNull)
+  contract Contract?   @relation(fields: [contractId], references: [id], onDelete: SetNull)
+  project  ProjectCatalog? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  foreman  Employee?  @relation(fields: [foremanId], references: [id], onDelete: SetNull)
+  mountScheduleEntries MountScheduleEntry[]
+
+  @@schema("public")
+  @@map("construction_object")
 }
 
 // Прорабы (foreman)
@@ -317,7 +347,8 @@ model Employee {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  contracts          Contract[]
+  contracts           Contract[]
+  constructionObjects ConstructionObject[]
   mountScheduleEntries MountScheduleEntry[]
 
   @@schema("public")
@@ -331,7 +362,8 @@ model ProjectCatalog {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  contracts          Contract[]
+  contracts           Contract[]
+  constructionObjects ConstructionObject[]
   mountScheduleEntries MountScheduleEntry[]
 
   @@schema("public")
@@ -342,7 +374,7 @@ model ProjectCatalog {
 model Contract {
   id             String    @id @default(cuid())
   contractNumber String
-  houseNo        Int?
+  kitNo          Int?      // Номер домокомплекта
   addressId      String?
   buildType      String?
   projectId      String?
@@ -354,6 +386,7 @@ model Contract {
   address  Address?       @relation(fields: [addressId], references: [id], onDelete: SetNull)
   project  ProjectCatalog? @relation(fields: [projectId], references: [id], onDelete: SetNull)
   foreman  Employee?      @relation(fields: [foremanId], references: [id], onDelete: SetNull)
+  constructionObjects ConstructionObject[]
   mountScheduleEntries MountScheduleEntry[]
 
   @@schema("public")
@@ -363,10 +396,11 @@ model Contract {
 // Запись графика монтажа (одна строка = объект/дом)
 model MountScheduleEntry {
   id                      String    @id @default(cuid())
+  objectId                String?   // Ссылка на объект из раздела Объекты (опционально для обратной совместимости)
   planMonth               DateTime  // Первое число месяца
   contractId              String?
   contractNumber          String
-  houseNo                Int?
+  kitNo                   Int?   // Номер домокомплекта
   addressId               String?
   buildType               String?
   projectId               String?
@@ -396,11 +430,13 @@ model MountScheduleEntry {
   exteriorRaw             String?
   handoverDate            DateTime?
   handoverRaw             String?
+  mountStartDate          DateTime?  // Утверждённая дата начала монтажа — при наличии запись в табе «График монтажа»
   comment                 String?
   sortOrder               Int?
   createdAt               DateTime  @default(now())
   updatedAt               DateTime  @updatedAt
 
+  object   ConstructionObject? @relation(fields: [objectId], references: [id], onDelete: SetNull)
   contract Contract?  @relation(fields: [contractId], references: [id], onDelete: SetNull)
   address  Address?  @relation(fields: [addressId], references: [id], onDelete: SetNull)
   project  ProjectCatalog? @relation(fields: [projectId], references: [id], onDelete: SetNull)

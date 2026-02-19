@@ -1,5 +1,5 @@
 // Моковые данные для «График монтажа» на основе PDF «График заездов 2026-2025 — План март»
-import type { ConstructionObject, Territory } from "@/types/construction-schedule"
+import type { ConstructionObjectLegacy, Territory } from "@/types/construction-schedule"
 
 export const TERRITORIES: Territory[] = [
   { id: "nn", name: "Н.Новгород, Арзамас, Кстово", order: 1 },
@@ -8,7 +8,7 @@ export const TERRITORIES: Territory[] = [
   { id: "dz", name: "Дзержинск и регионы", order: 4 },
 ]
 
-export const MOCK_SCHEDULE_OBJECTS: ConstructionObject[] = [
+export const MOCK_SCHEDULE_OBJECTS: ConstructionObjectLegacy[] = [
   // Н.Новгород, Арзамас, Кстово
   { id: "obj-1", territoryId: "nn", location: "Килилей", orderCode: "101А/25", type: "ПКД", escrowEgrn: "344", project: "Норвегия L", manager: "Ухин", amount: 6_179_000, launchDate: "06.02.2026", stages: { roof: "12.2", electrical: "16.02.26", plumbing: "23.2" }, statusComment: "Стройка. Ждем Теплый контур. Монтаж завершен.", documentNumber: "№2117133" },
   { id: "obj-2", territoryId: "nn", location: "Каменки", orderCode: "112А/25", type: "МД", escrowEgrn: "368", project: "Барн 90", manager: "Ухин", amount: 7_450_000, launchDate: "18.02.2026", stages: { production: "16.02", shipment: "18.02.2026", roof: "21.2", electrical: "25.2", handover: "20.02.2026" }, statusComment: "Ждем Теплый контур. Монтаж на производстве. В производстве 10.02.", documentNumber: "№2125030" },

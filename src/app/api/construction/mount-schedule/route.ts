@@ -1,8 +1,9 @@
+import { randomUUID } from "crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getAmountDisplay, getStatusSummary, getAddressDisplay } from "../mount-schedule-utils"
 
-/** GET /api/construction/mount-schedule?planMonth=YYYY-MM&address=...&type=...&foreman=...&page=1&pageSize=20 */
+/** GET /api/construction/mount-schedule?planMonth=YYYY-MM&tab=schedule|planning&address=...&type=...&foreman=...&page=1&pageSize=20 */
 export async function GET(request: NextRequest) {
   try {
     const supabase = await createClient()
@@ -13,6 +14,7 @@ export async function GET(request: NextRequest) {
 
     const { searchParams } = new URL(request.url)
     const planMonth = searchParams.get("planMonth")
+    const tab = searchParams.get("tab") // "schedule" = с утверждённой датой монтажа, "planning" = без
     const addressFilter = searchParams.get("address")?.trim() || undefined
     const typeFilter = searchParams.get("type")?.trim() || undefined
     const foremanFilter = searchParams.get("foreman")?.trim() || undefined
@@ -51,6 +53,11 @@ export async function GET(request: NextRequest) {
     if (addressFilter && addressFilter !== "all") {
       query = query.eq("addressId", addressFilter)
     }
+    if (tab === "schedule") {
+      query = query.not("mountStartDate", "is", null)
+    } else if (tab === "planning") {
+      query = query.is("mountStartDate", null)
+    }
     const { data: rows, error, count } = await query
       .order("sortOrder", { ascending: true, nullsFirst: true })
       .order("contractNumber", { ascending: true })
@@ -69,7 +76,7 @@ export async function GET(request: NextRequest) {
         planMonth: planMonthVal?.slice(0, 7) ?? "",
         contractId: row.contractId,
         contractNumber: row.contractNumber,
-        houseNo: row.houseNo,
+        kitNo: row.kitNo,
         addressId: row.addressId,
         addressDisplay: getAddressDisplay(addr as Record<string, unknown> | null),
         buildType: row.buildType,
@@ -84,6 +91,7 @@ export async function GET(request: NextRequest) {
         shipmentDate: (row.shipmentDate as string)?.slice(0, 10) ?? null,
         roofWorkDate: (row.roofWorkDate as string)?.slice(0, 10) ?? null,
         handoverDate: (row.handoverDate as string)?.slice(0, 10) ?? null,
+        mountStartDate: (row.mountStartDate as string)?.slice(0, 10) ?? null,
         statusSummary: getStatusSummary(row),
         statusSummaryOverride: row.statusSummaryOverride,
         productionStatus: row.productionStatus,
@@ -132,6 +140,7 @@ export async function POST(request: NextRequest) {
       const { data: addr, error: addrError } = await supabase
         .from("address")
         .insert({
+          id: randomUUID(),
           region: (addressPayload.region as string) || undefined,
           district: (addressPayload.district as string) || undefined,
           locality: (addressPayload.locality as string) || undefined,
@@ -158,7 +167,7 @@ export async function POST(request: NextRequest) {
         planMonth,
         contractId: (body.contractId as string) || null,
         contractNumber,
-        houseNo: typeof body.houseNo === "number" ? body.houseNo : body.houseNo != null ? parseInt(String(body.houseNo), 10) : null,
+        kitNo: typeof body.kitNo === "number" ? body.kitNo : body.kitNo != null ? parseInt(String(body.kitNo), 10) : null,
         addressId: addressId ?? null,
         buildType: (body.buildType as string) || null,
         projectId: (body.projectId as string) || null,
@@ -172,6 +181,7 @@ export async function POST(request: NextRequest) {
         shipmentDate: body.shipmentDate ? new Date(body.shipmentDate).toISOString() : null,
         roofWorkDate: body.roofWorkDate ? new Date(body.roofWorkDate).toISOString() : null,
         handoverDate: body.handoverDate ? new Date(body.handoverDate).toISOString() : null,
+        mountStartDate: body.mountStartDate ? new Date(body.mountStartDate).toISOString() : null,
         statusSummaryOverride: (body.statusSummaryOverride as string) || null,
         comment: (body.comment as string) || null,
         sortOrder: typeof body.sortOrder === "number" ? body.sortOrder : body.sortOrder != null ? parseInt(String(body.sortOrder), 10) : null,

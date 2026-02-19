@@ -56,7 +56,9 @@ const ENABLED_URLS = new Set([
   "/docs/projects",
   "/warehouse/inventory",
   "/warehouse/transfers",
+  "/dashboard/plan",
   "/construction/schedule",
+  "/construction/objects",
 ])
 
 // Пункты раздела «Закупки и снабжение»: два с вложенностью (коллапсибл), один без — как в разделе Склад
