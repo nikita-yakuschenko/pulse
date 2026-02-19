@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 import { getAmountDisplay, getStatusSummary, getAddressDisplay } from "../../mount-schedule-utils"
@@ -23,6 +24,7 @@ export async function PATCH(
       const { data: addr, error: addrError } = await supabase
         .from("address")
         .insert({
+          id: randomUUID(),
           region: (addressPayload.region as string) || undefined,
           district: (addressPayload.district as string) || undefined,
           locality: (addressPayload.locality as string) || undefined,
@@ -52,7 +54,7 @@ export async function PATCH(
     }
     if (body.contractId !== undefined) data.contractId = body.contractId || null
     if (body.contractNumber !== undefined) data.contractNumber = body.contractNumber
-    if (body.houseNo !== undefined) data.houseNo = body.houseNo != null ? body.houseNo : null
+    if (body.kitNo !== undefined) data.kitNo = body.kitNo != null ? body.kitNo : null
     if (addressId !== undefined) data.addressId = addressId ?? null
     if (body.buildType !== undefined) data.buildType = body.buildType || null
     if (body.projectId !== undefined) data.projectId = body.projectId || null
@@ -66,6 +68,7 @@ export async function PATCH(
     if (body.shipmentDate !== undefined) data.shipmentDate = body.shipmentDate ? new Date(body.shipmentDate).toISOString() : null
     if (body.roofWorkDate !== undefined) data.roofWorkDate = body.roofWorkDate ? new Date(body.roofWorkDate).toISOString() : null
     if (body.handoverDate !== undefined) data.handoverDate = body.handoverDate ? new Date(body.handoverDate).toISOString() : null
+    if (body.mountStartDate !== undefined) data.mountStartDate = body.mountStartDate ? new Date(body.mountStartDate).toISOString() : null
     if (body.statusSummaryOverride !== undefined) data.statusSummaryOverride = body.statusSummaryOverride || null
     if (body.comment !== undefined) data.comment = body.comment || null
     if (body.sortOrder !== undefined) data.sortOrder = body.sortOrder != null ? body.sortOrder : null
@@ -74,7 +77,7 @@ export async function PATCH(
       .from("mount_schedule_entry")
       .update(data)
       .eq("id", id)
-      .select("id, planMonth, contractNumber, addressId, amountCurrent, amountNext, statusSummaryOverride, productionStatus, productionLaunchDate, address(*)")
+      .select("id, planMonth, contractNumber, addressId, amountCurrent, amountNext, statusSummaryOverride, productionStatus, productionLaunchDate, mountStartDate, address(*)")
       .single()
 
     if (error || !entry) {

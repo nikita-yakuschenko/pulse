@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
       return {
         id: c.id,
         contractNumber: c.contractNumber,
-        houseNo: c.houseNo,
+        kitNo: c.kitNo,
         addressId: c.addressId,
         buildType: c.buildType,
         projectId: c.projectId,

@@ -1,3 +1,4 @@
+import { randomUUID } from "crypto"
 import { NextRequest, NextResponse } from "next/server"
 import { createClient } from "@/lib/supabase/server"
 
@@ -59,6 +60,7 @@ export async function POST(request: NextRequest) {
     const { data: addr, error } = await supabase
       .from("address")
       .insert({
+        id: randomUUID(),
         region: (body.region as string) || undefined,
         district: (body.district as string) || undefined,
         locality: (body.locality as string) || undefined,
