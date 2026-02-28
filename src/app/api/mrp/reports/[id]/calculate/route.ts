@@ -193,7 +193,7 @@ export async function POST(
       getWarehouseBalances(metadata),
       getWarehouses(metadata),
     ])
-    const warehouses = Array.isArray(rawWarehouses) ? rawWarehouses : []
+    const warehouses = Array.isArray(rawWarehouses) ? (rawWarehouses as { Код?: string; Наименование?: string }[]) : []
     const mainName = getMainWarehouseName(warehouses)
     const tree = Array.isArray(rawBalances) ? rawBalances : []
     const filteredTree = mainName ? filterTreeByMainWarehouse(tree as TreeNode[], mainName) : (tree as TreeNode[])

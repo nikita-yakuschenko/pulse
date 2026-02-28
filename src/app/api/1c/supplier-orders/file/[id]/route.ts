@@ -37,8 +37,9 @@ export async function GET(
     const authHeader = createBasicAuthHeader(credentials.username, credentials.password)
     const idTrimmed = id.trim()
 
-    // В BSL указано «/get/file/{id}» — путь может быть без префикса sorders (в зависимости от регистрации HTTP-сервиса в 1С)
+    // Путь к файлу: по bsl сервис — supplier-orders; в 1С может быть зарегистрирован как sorders — пробуем оба.
     const candidates = [
+      `${baseUrl}supplier-orders/get/file/${encodeURIComponent(idTrimmed)}`,
       `${baseUrl}sorders/get/file/${encodeURIComponent(idTrimmed)}`,
       `${baseUrl}get/file/${encodeURIComponent(idTrimmed)}`,
     ]

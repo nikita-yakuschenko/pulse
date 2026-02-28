@@ -81,7 +81,7 @@ export async function GET() {
       getWarehouseBalances(metadata),
       getWarehouses(metadata),
     ])
-    const warehouses = Array.isArray(rawWarehouses) ? rawWarehouses : []
+    const warehouses = Array.isArray(rawWarehouses) ? (rawWarehouses as { Код?: string; Наименование?: string }[]) : []
     const mainName = getMainWarehouseName(warehouses)
     const tree = Array.isArray(rawBalances) ? rawBalances : []
 

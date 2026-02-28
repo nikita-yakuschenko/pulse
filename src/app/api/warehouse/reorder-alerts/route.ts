@@ -107,7 +107,7 @@ export async function GET() {
     ])
 
     const tree = Array.isArray(rawBalances) ? rawBalances : []
-    const warehousesList = Array.isArray(rawWarehouses) ? rawWarehouses : []
+    const warehousesList = Array.isArray(rawWarehouses) ? (rawWarehouses as { Код?: string; Наименование?: string }[]) : []
     const codeToName = buildWarehouseCodeToName(warehousesList)
 
     const items: ReorderAlertItem[] = []

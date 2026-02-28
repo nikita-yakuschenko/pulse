@@ -53,9 +53,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(cached)
     }
 
-    const raw = await getReceipts(metadata, filters)
-    // 1С возвращает { data: [...] }; если пришёл массив — используем как есть
-    const data = Array.isArray(raw) ? raw : (raw && typeof raw === "object" && Array.isArray((raw as { data?: unknown }).data) ? (raw as { data: unknown[] }).data : [])
+    const data = await getReceipts(metadata, filters)
     const body = { data, filters }
     await cacheSet(cacheKey, body, CACHE_TTL_SEC)
     return NextResponse.json(body)
