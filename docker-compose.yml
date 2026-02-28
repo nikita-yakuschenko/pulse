@@ -11,10 +11,18 @@ services:
       - NEXT_PUBLIC_SUPABASE_ANON_KEY=${NEXT_PUBLIC_SUPABASE_ANON_KEY}
       - SUPABASE_SERVICE_ROLE_KEY=${SUPABASE_SERVICE_ROLE_KEY}
       - MFA_COOKIE_SECRET=${MFA_COOKIE_SECRET}
-      - REDIS_URL=${REDIS_URL}
+      - REDIS_URL=${REDIS_URL:-redis://pulse-redis:6379}
       # Опционально: 2FA, Prisma
       - RESEND_API_KEY=${RESEND_API_KEY}
       - RESEND_FROM_EMAIL=${RESEND_FROM_EMAIL}
       - TELEGRAM_GATEWAY_TOKEN=${TELEGRAM_GATEWAY_TOKEN}
       - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      - pulse-redis
     # Переменные из .env подхватятся автоматически при запуске: docker compose up
+
+  pulse-redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
