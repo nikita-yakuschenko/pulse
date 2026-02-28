@@ -88,15 +88,17 @@ function extractShortYear(dateStr: string): string {
   return year.slice(-2)
 }
 
-function periodToShortYear(dateFrom: string): string {
-  if (!dateFrom || !dateFrom.includes("-")) return ""
-  const y = dateFrom.slice(0, 4)
-  return y.length === 4 ? y.slice(-2) : ""
-}
-
 function parseDateToTime(dateStr: string | undefined): number {
   if (!dateStr?.trim()) return 0
   return parseDate(dateStr).getTime()
+}
+
+/** ISO YYYY-MM-DD → dd.MM.yyyy для запросов к API 1С */
+function to1CDate(iso: string): string {
+  if (!iso?.trim() || !iso.includes("-")) return ""
+  const [y, m, d] = iso.trim().split("-")
+  if (!y || !m || !d) return ""
+  return `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}.${y}`
 }
 
 function formatSum(sum: number): string {
@@ -192,15 +194,17 @@ export function ReceiptsTable() {
       const org = overrides?.org ?? filterOrg
       const material = overrides?.material ?? filterMaterial
       const full = overrides?.full ?? filterFull
-      const year = periodToShortYear(dateFrom || dateTo)
       try {
         const params = new URLSearchParams()
         if (code.trim()) params.set("code", code.trim())
-        if (year) params.set("year", year)
+        const from1C = to1CDate(dateFrom || "")
+        const to1C = to1CDate(dateTo || "")
+        if (from1C) params.set("from", from1C)
+        if (to1C) params.set("to", to1C)
         if (contractor.trim()) params.set("contractor", contractor.trim())
         if (org.trim()) params.set("org", org.trim())
         if (material.trim()) params.set("material", material.trim())
-        if (full) params.set("full", "1")
+        if (full) params.set("full", "true")
 
         const url = `/api/1c/receipts${params.toString() ? `?${params}` : ""}`
         const res = await fetch(url)

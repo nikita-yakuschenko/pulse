@@ -8,7 +8,7 @@ const CACHE_TTL_SEC = 5 * 60 // 5 минут
 /**
  * GET /api/1c/supplier-orders
  * Получает список заказов поставщикам из 1С. Кэш в Redis.
- * Query: code, contractor, year, full
+ * Query: code, contractor, from, to (формат dd.MM.yyyy), full. Параметр year не используется в текущей версии API 1С — при наличии year конвертируем в from/to.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -35,13 +35,22 @@ export async function GET(request: NextRequest) {
 
     const code = searchParams.get("code")
     const contractor = searchParams.get("contractor")
+    const from = searchParams.get("from")
+    const to = searchParams.get("to")
     const year = searchParams.get("year")
     const full = searchParams.get("full")
 
     if (code) filters.code = code
     if (contractor) filters.contractor = contractor
-    if (year) filters.year = year
-    if (full === "1" || full === "true") filters.full = true
+    if (from) filters.from = from
+    if (to) filters.to = to
+    if (year && !filters.from && !filters.to) {
+      const y = year.trim().slice(-2)
+      const fullYear = y.length === 2 ? `20${y}` : year
+      filters.from = `01.01.${fullYear}`
+      filters.to = `31.12.${fullYear}`
+    }
+    if (full === "1" || full === "true" || full === "yes" || (full && full.toLowerCase() === "full")) filters.full = true
 
     const cacheKey = buildCacheKey("1c:supplier-orders", user.id, filters as Record<string, string>)
     const cached = await cacheGet<{ data: unknown; filters: SordersFilters }>(cacheKey)

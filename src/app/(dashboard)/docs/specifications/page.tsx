@@ -227,7 +227,7 @@ export default function SpecificationsPage() {
       setDetailLoading(true)
       try {
         const params = new URLSearchParams()
-        params.set("full", "1")
+        params.set("full", "true")
         if (code) params.set("code", code)
         else if (name) params.set("name", name)
         const res = await fetch(`/api/1c/specifications?${params}`)

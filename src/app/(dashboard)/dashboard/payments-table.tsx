@@ -92,6 +92,14 @@ function parseDateToTime(dateStr: string | undefined): number {
   return parseDate(dateStr).getTime()
 }
 
+/** ISO YYYY-MM-DD → dd.MM.yyyy для запросов к API 1С */
+function to1CDate(iso: string): string {
+  if (!iso?.trim() || !iso.includes("-")) return ""
+  const [y, m, d] = iso.trim().split("-")
+  if (!y || !m || !d) return ""
+  return `${String(d).padStart(2, "0")}.${String(m).padStart(2, "0")}.${y}`
+}
+
 /**
  * Форматирует сумму для отображения (без валюты)
  */
@@ -100,6 +108,42 @@ function formatSum(sum: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(sum)
+}
+
+/** Приведение значения из 1С к числу (1С может вернуть строку или число). */
+function toSumNumber(value: unknown): number | null {
+  if (value == null) return null
+  if (typeof value === "number" && !Number.isNaN(value)) return value
+  if (typeof value === "string") {
+    const normalized = value.replace(/\s/g, "").replace(",", ".")
+    const num = parseFloat(normalized)
+    return Number.isNaN(num) ? null : num
+  }
+  return null
+}
+
+/** Ячейка суммы: форматируем число; если не число — показываем как есть или прочерк. */
+function formatSumCell(value: unknown): React.ReactNode {
+  const n = toSumNumber(value)
+  if (n !== null) return formatSum(n)
+  if (value !== undefined && value !== null && value !== "") return String(value)
+  return "—"
+}
+
+/** Сумма платежа/заказа: 1С возвращает СуммаДокумента или Сумма. */
+function paymentSum(p: { Сумма?: number; СуммаДокумента?: number }): unknown {
+  return (p as { СуммаДокумента?: number }).СуммаДокумента ?? p.Сумма
+}
+
+/** Дата для отображения и фильтрации: приоритет — дата расхода, иначе дата документа. */
+function paymentDisplayDate(p: { Дата?: string; ДатаРасхода?: string }): string {
+  return (p as { ДатаРасхода?: string }).ДатаРасхода ?? p.Дата ?? ""
+}
+
+/** Контрагент для отображения: при пустом Контрагенте показываем Получателя (1С часто отдаёт получателя). */
+function paymentContractor(p: { Контрагент?: string; Получатель?: string }): string {
+  const k = (p as { Получатель?: string }).Получатель ?? p.Контрагент ?? ""
+  return k.trim() || ""
 }
 
 /** Можно ли показать файл в диалоге (PDF или изображение). */
@@ -122,11 +166,12 @@ function getMimeType(fileName: string): string {
   return "application/octet-stream"
 }
 
-/** Data URL из вложения, если есть ФайлBase64 (ответ 1С при full=1). Иначе null. */
+/** Data URL из вложения по полю Данные или ФайлBase64 (ответ 1С при full=true). Иначе null. */
 function dataUrlFromAttachment(att: SupplierOrderAttachment): string | null {
-  if (!att.ФайлBase64) return null
+  const b64 = att.Данные ?? att.ФайлBase64
+  if (!b64) return null
   const mime = getMimeType(att.ИмяФайла || "")
-  return `data:${mime};base64,${att.ФайлBase64}`
+  return `data:${mime};base64,${b64}`
 }
 
 /** URL для открытия в новой вкладке или iframe: data URL → blob URL (браузер блокирует data URL в top frame). */
@@ -253,7 +298,7 @@ function PaymentLinesSection({ title, items }: { title: string; items: import("@
                     <div className="text-xs text-muted-foreground mt-1">{item.Назначение}</div>
                   ) : null}
                 </div>
-                <span className="text-right tabular-nums font-semibold whitespace-nowrap shrink-0">{formatSum(item.Сумма)}</span>
+                <span className="text-right tabular-nums font-semibold whitespace-nowrap shrink-0">{formatSumCell(paymentSum(item))}</span>
               </div>
             ))}
           </div>
@@ -393,11 +438,13 @@ export function PaymentsTable() {
       const status = overrides?.status ?? filterStatus
 
       const params = new URLSearchParams()
+      // В 1С при запросе только по responsible/contractor/org/status (без from/to) возвращается пустой массив.
+      // В API уходят только период и номер; фильтр по ответственному, поставщику, организации, статусу — на клиенте.
       if (code.trim()) params.set("code", code.trim())
-      if (contractor.trim()) params.set("contractor", contractor.trim())
-      if (org.trim()) params.set("org", org.trim())
-      if (responsible.trim()) params.set("responsible", responsible.trim())
-      if (status.trim()) params.set("status", status.trim())
+      const from1C = to1CDate(dateFrom || "")
+      const to1C = to1CDate(dateTo || "")
+      if (from1C) params.set("from", from1C)
+      if (to1C) params.set("to", to1C)
 
       const url = `/api/1c/payments${params.toString() ? `?${params.toString()}` : ""}`
       const response = await fetch(url)
@@ -407,14 +454,23 @@ export function PaymentsTable() {
       const data = await response.json()
 
       let paymentsData: Payment[] = data.data || []
+      if (org.trim()) {
+        paymentsData = paymentsData.filter((p) => (p.Организация ?? "").trim() === org.trim())
+      }
+      if (responsible.trim()) {
+        paymentsData = paymentsData.filter((p) => (p.Ответственный ?? "").trim() === responsible.trim())
+      }
       if (status.trim()) {
         paymentsData = paymentsData.filter((p) => (p.Статус ?? "") === status.trim())
+      }
+      if (contractor.trim()) {
+        paymentsData = paymentsData.filter((p) => paymentContractor(p) === contractor.trim())
       }
       const fromTs = parseDateToTime(dateFrom || undefined)
       const toTsEnd = dateTo ? parseDateToTime(dateTo) + 24 * 60 * 60 * 1000 - 1 : 0
       if (fromTs > 0 || toTsEnd > 0) {
         paymentsData = paymentsData.filter((p) => {
-          const ts = parseDateToTime(p.Дата)
+          const ts = parseDateToTime(paymentDisplayDate(p))
           if (fromTs > 0 && ts < fromTs) return false
           if (toTsEnd > 0 && ts > toTsEnd) return false
           return true
@@ -441,11 +497,12 @@ export function PaymentsTable() {
         const data = await res.json()
         if (res.ok && data.data) {
           data.data.forEach((p: Payment) => {
-            if (p.Контрагент) optionsAccumulator.current.contractors.add(p.Контрагент)
+            const contractorDisplay = paymentContractor(p)
+            if (contractorDisplay) optionsAccumulator.current.contractors.add(contractorDisplay)
             if (p.Организация) optionsAccumulator.current.orgs.add(p.Организация)
             if (p.Ответственный) optionsAccumulator.current.resps.add(p.Ответственный)
             if (p.Статус) optionsAccumulator.current.statuses.add(p.Статус)
-            const year = extractYear(p.Дата)
+            const year = extractYear(paymentDisplayDate(p))
             if (year) optionsAccumulator.current.years.add(year)
           })
         }
@@ -459,20 +516,35 @@ export function PaymentsTable() {
     loadInitial()
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Автоматическая загрузка при изменении фильтров Год, Организация, Ответственный, Статус (НЕ code/contractor — они по Enter)
+  // Автоматическая загрузка при изменении фильтров (дата, организация, ответственный, статус) — сразу
   useEffect(() => {
     if (!isInitialLoadDone.current) return
     loadPayments()
   }, [filterDateFrom, filterDateTo, filterOrganization, filterResponsible, filterStatus]) // eslint-disable-line react-hooks/exhaustive-deps
 
+  // Загрузка при изменении Номер / Поставщик — с дебаунсом 400 мс
+  const debounceCodeContractorRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  useEffect(() => {
+    if (!isInitialLoadDone.current) return
+    if (debounceCodeContractorRef.current) clearTimeout(debounceCodeContractorRef.current)
+    debounceCodeContractorRef.current = setTimeout(() => {
+      debounceCodeContractorRef.current = null
+      loadPayments()
+    }, 400)
+    return () => {
+      if (debounceCodeContractorRef.current) clearTimeout(debounceCodeContractorRef.current)
+    }
+  }, [filterCode, filterContractor]) // eslint-disable-line react-hooks/exhaustive-deps
+
   // При каждой загрузке дополняем накопленные опции (как в Заказах поставщикам)
   useEffect(() => {
     payments.forEach((payment) => {
-      if (payment.Контрагент) optionsAccumulator.current.contractors.add(payment.Контрагент)
+      const contractorDisplay = paymentContractor(payment)
+      if (contractorDisplay) optionsAccumulator.current.contractors.add(contractorDisplay)
       if (payment.Организация) optionsAccumulator.current.orgs.add(payment.Организация)
       if (payment.Ответственный) optionsAccumulator.current.resps.add(payment.Ответственный)
       if (payment.Статус) optionsAccumulator.current.statuses.add(payment.Статус)
-      const year = extractYear(payment.Дата)
+      const year = extractYear(paymentDisplayDate(payment))
       if (year) optionsAccumulator.current.years.add(year)
     })
   }, [payments])
@@ -502,8 +574,8 @@ export function PaymentsTable() {
 
     // Сортировка по дате: от новых к старым (убывание)
     result.sort((a, b) => {
-      const dateA = parseDate(a.Дата)
-      const dateB = parseDate(b.Дата)
+      const dateA = parseDate(paymentDisplayDate(a))
+      const dateB = parseDate(paymentDisplayDate(b))
       return dateB.getTime() - dateA.getTime() // убывание: более новая дата идет первой
     })
 
@@ -548,10 +620,19 @@ export function PaymentsTable() {
     setPaymentDetails(null)
 
     try {
-      // Загружаем подробную информацию с параметром full=1
+      // Загружаем подробную информацию с full=1 (файлы из хранилища доп. информации). Период — год из даты заявки.
       const params = new URLSearchParams()
       params.set("code", payment.Номер)
-      params.set("full", "1")
+      params.set("full", "true")
+      const dateStr = (payment as { ДатаРасхода?: string }).ДатаРасхода ?? payment.Дата ?? ""
+      const parts = (dateStr || "").trim().split(" ")
+      const datePart = (parts[0] || "").split(".")
+      const y = datePart[2] ?? ""
+      const fullYear = y.length === 2 ? `20${y}` : y
+      if (fullYear) {
+        params.set("from", `01.01.${fullYear}`)
+        params.set("to", `31.12.${fullYear}`)
+      }
 
       const res = await fetch(`/api/1c/payments?${params}`)
       const data = await res.json()
@@ -776,7 +857,7 @@ export function PaymentsTable() {
         <Table>
           <TableHeader className="bg-muted">
             <TableRow>
-              <TableHead className="w-[90px]">Дата</TableHead>
+              <TableHead className="w-[90px]">Дата расхода</TableHead>
               <TableHead className="w-[120px]">Номер</TableHead>
               <TableHead>Контрагент</TableHead>
               <TableHead>Организация</TableHead>
@@ -812,7 +893,7 @@ export function PaymentsTable() {
                   )}
                   onClick={() => openPaymentDetails(payment)}
                 >
-                  <TableCell className="text-sm">{formatDate(payment.Дата)}</TableCell>
+                  <TableCell className="text-sm">{formatDate(paymentDisplayDate(payment))}</TableCell>
                   <TableCell className="text-sm" onClick={(e) => e.stopPropagation()}>
                     <button
                       type="button"
@@ -831,9 +912,9 @@ export function PaymentsTable() {
                   </TableCell>
                   <TableCell>
                     {payment.Счёт?.toLowerCase().includes("касса") && 
-                     (payment.Контрагент === "Не указан" || !payment.Контрагент)
+                     (!paymentContractor(payment) || paymentContractor(payment) === "Не указан")
                       ? "Выдача средств из кассы"
-                      : payment.Контрагент}
+                      : (paymentContractor(payment) || "—")}
                   </TableCell>
                   <TableCell className="text-sm text-muted-foreground">
                     {payment.Организация}
@@ -873,7 +954,7 @@ export function PaymentsTable() {
                     </Badge>
                   </TableCell>
                   <TableCell className="text-right font-medium">
-                    {formatSum(payment.Сумма)}
+                    {formatSumCell(paymentSum(payment))}
                   </TableCell>
                 </TableRow>
               ))
@@ -1195,6 +1276,9 @@ export function PaymentsTable() {
                 // Дефолтный фон, если статус неизвестен
                 !(selectedPayment?.Статус || paymentDetails?.Статус) && "bg-muted/30"
               )}>
+                <SheetTitle className="sr-only">
+                  {selectedPayment ? `Заявка на оплату ${selectedPayment.Номер}` : "Заявка на оплату"}
+                </SheetTitle>
                 <div className="flex items-center gap-2">
                   <span className="text-xl font-semibold text-foreground">Заявка на оплату</span>
                   {selectedPayment && (
@@ -1215,7 +1299,7 @@ export function PaymentsTable() {
                   )}
                 </div>
                 <SheetDescription className="text-sm mt-1">
-                  {formatDate(selectedPayment?.Дата)}
+                  {formatDate(selectedPayment ? paymentDisplayDate(selectedPayment) : "")}
                 </SheetDescription>
               </SheetHeader>
 
@@ -1235,14 +1319,14 @@ export function PaymentsTable() {
                             <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Контрагент</p>
                             <p className="text-sm font-medium break-words">
                               {paymentDetails.Счёт?.toLowerCase().includes("касса") && 
-                               (paymentDetails.Контрагент === "Не указан" || !paymentDetails.Контрагент)
+                               (!paymentContractor(paymentDetails) || paymentContractor(paymentDetails) === "Не указан")
                                 ? "Выдача средств из кассы"
-                                : paymentDetails.Контрагент}
+                                : (paymentContractor(paymentDetails) || "—")}
                             </p>
                           </div>
                           <div className="space-y-1">
                             <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Сумма</p>
-                            <p className="text-lg font-semibold tabular-nums whitespace-nowrap">{formatSum(paymentDetails.Сумма)}</p>
+                            <p className="text-lg font-semibold tabular-nums whitespace-nowrap">{formatSumCell(paymentSum(paymentDetails))}</p>
                           </div>
                           <div className="space-y-1">
                             <p className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">Организация</p>
@@ -1315,11 +1399,12 @@ export function PaymentsTable() {
                       <PaymentLinesSection title="Расшифровка платежа" items={paymentDetails.РасшифровкаПлатежа} />
                     )}
 
-                    {/* Вложения: при full=1 используем ФайлBase64 из ответа (без вызова API файла); иначе — ссылка на API */}
-                    {paymentDetails.ДопИнформация && paymentDetails.ДопИнформация.length > 0 && (() => {
-                      const attachments = paymentDetails.ДопИнформация.filter(
+                    {/* Вложения: при full=true 1С возвращает поле Вложения с { ИмяФайла, Данные (base64) } */}
+                    {(() => {
+                      const raw = paymentDetails.Вложения ?? paymentDetails.ДопИнформация ?? []
+                      const attachments = raw.filter(
                         (a: SupplierOrderAttachment) =>
-                          (a.ЕстьВложение && a.ИдентификаторХранилища) || !!a.ФайлBase64
+                          !!a.Данные || !!a.ФайлBase64 || (a.ЕстьВложение && !!a.ИдентификаторХранилища) || !!a.ИмяФайла
                       ) as SupplierOrderAttachment[]
                       if (attachments.length === 0) return null
                       const fileApiUrl = (id: string) => `/api/1c/payments/file/${encodeURIComponent(id)}`
@@ -1337,11 +1422,12 @@ export function PaymentsTable() {
                                 const name = att.ИмяФайла || att.Представление || "Файл"
                                 const id = att.ИдентификаторХранилища ?? `att-${idx}`
                                 const dataUrl = dataUrlFromAttachment(att)
-                                const href = dataUrl ?? fileApiUrl(id)
+                                const href = dataUrl ?? (att.ИдентификаторХранилища ? fileApiUrl(id) : null)
                                 const kind = getFilePreviewKind(name)
                                 return (
                                   <li key={id} className="flex items-center gap-2 flex-wrap">
                                     <IconFile className="h-4 w-4 shrink-0 text-muted-foreground" />
+                                    {href ? (
                                     <a
                                       href={href}
                                       target="_blank"
@@ -1351,6 +1437,9 @@ export function PaymentsTable() {
                                     >
                                       {name}
                                     </a>
+                                    ) : (
+                                      <span className="text-sm break-all">{name}</span>
+                                    )}
                                     {kind !== "other" && (
                                       <Button
                                         type="button"

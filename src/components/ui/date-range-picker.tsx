@@ -256,6 +256,7 @@ function JollyDateRangePicker<T extends AriaDateValue>({
   fieldGroupVariant = "ghost",
   placeholder = "Выберите дату или период",
   quickSelectVariant = "default",
+  "aria-label": ariaLabel,
   ...props
 }: JollyDateRangePickerProps<T>) {
   const isEmpty = props.value == null
@@ -270,6 +271,7 @@ function JollyDateRangePicker<T extends AriaDateValue>({
       ),
     [props.onChange]
   )
+  const hasVisibleLabel = Boolean(label?.trim())
   return (
     <QuickSelectVariantContext.Provider value={quickSelectVariant}>
     <QuickSelectContext.Provider value={onQuickSelect}>
@@ -281,6 +283,7 @@ function JollyDateRangePicker<T extends AriaDateValue>({
           className
         )
       )}
+      aria-label={ariaLabel ?? (hasVisibleLabel ? undefined : "Период")}
       {...props}
     >
       {label ? (
