@@ -2,6 +2,10 @@
  * Интеграция с 1С
  * Запросы к HTTP API по документации bsl/: единый метод get на сервис, параметры в query-string.
  * Ответ: { data: T[], errors: string[] }; при 500 — { error: string }.
+ *
+ * Сущности и fallback при 404:
+ * - supplier-orders → sorders (список и файл)
+ * - specifications, balances, materials, warehouses, suppliers, payments, receipts, demands, transfers — один путь; при 404 добавить fallback в массив endpoints в getWith404Fallback.
  */
 
 import { createOneCClient, type OneCCredentials, type OneCEnvironment } from "@/lib/1c-client"
@@ -22,6 +26,14 @@ function toApiBool(v: boolean): string {
   return v ? "1" : "0"
 }
 
+/** Query-параметр full: в 1С передаём "true" (принимаем 1, true, yes, full). */
+function toFullQueryParam(v: unknown): string | undefined {
+  if (v == null || v === "") return undefined
+  const s = String(v).toLowerCase()
+  if (s === "1" || s === "true" || s === "yes" || s === "full") return "true"
+  return undefined
+}
+
 /** Парсит ответ API: { data, errors } или массив (старый формат). */
 function parseDataResponse<T>(raw: unknown): { data: T[]; errors: string[] } {
   if (raw != null && typeof raw === "object" && "data" in raw) {
@@ -34,16 +46,37 @@ function parseDataResponse<T>(raw: unknown): { data: T[]; errors: string[] } {
   return { data: [], errors: [] }
 }
 
+/** Пробует endpoints по очереди; при 404 переходит к следующему. Возвращает результат первого успешного или бросает последнюю ошибку. */
+async function getWith404Fallback<T>(
+  client: { get: (endpoint: string) => Promise<unknown> },
+  endpoints: string[],
+  parse: (raw: unknown) => { data: T[] }
+): Promise<T[]> {
+  let lastErr: unknown
+  for (const endpoint of endpoints) {
+    try {
+      const raw = await client.get(endpoint)
+      const { data } = parse(raw)
+      return data
+    } catch (err) {
+      lastErr = err
+      const msg = err instanceof Error ? err.message : String(err)
+      if (!msg.includes("404")) throw err
+    }
+  }
+  throw lastErr
+}
+
 /**
  * Параметры фильтрации заказов поставщикам.
  * API 1С: supplier-orders/get (from, to, code, date, supplier, org, warehouse, responsible, comment, summ, approved, full).
+ * Параметр year в текущей версии API не используется — передавать только from и to в формате dd.MM.yyyy.
  */
 export interface SordersFilters {
   code?: string
   contractor?: string   // в API 1С — supplier
-  year?: string        // короткий год (24, 25) → from/to
-  from?: string
-  to?: string
+  from?: string         // dd.MM.yyyy
+  to?: string           // dd.MM.yyyy
   date?: string
   org?: string
   warehouse?: string
@@ -54,17 +87,10 @@ export interface SordersFilters {
   full?: boolean
 }
 
-/** Преобразует год (24, 25) в from/to dd.MM.yyyy. */
-function yearToFromTo(year: string): { from: string; to: string } {
-  const y = year.trim().slice(-2)
-  const fullYear = y.length === 2 ? `20${y}` : year
-  return { from: `01.01.${fullYear}`, to: `31.12.${fullYear}` }
-}
-
 /**
- * Строит endpoint supplier-orders/get с query-параметрами.
+ * Строит query-string для заказов поставщикам (общий для supplier-orders и sorders).
  */
-export function buildSordersEndpoint(filters: SordersFilters): string {
+function buildSordersQuery(filters: SordersFilters): string {
   const q: Record<string, string | number | undefined> = {}
   if (filters.code?.trim()) q.code = filters.code.trim()
   if (filters.from?.trim()) q.from = filters.from.trim()
@@ -77,13 +103,16 @@ export function buildSordersEndpoint(filters: SordersFilters): string {
   if (filters.comment?.trim()) q.comment = filters.comment.trim()
   if (filters.summ != null) q.summ = filters.summ
   if (filters.approved != null) q.approved = toApiBool(filters.approved)
-  if (filters.full) q.full = "1"
-  if (filters.year?.trim() && !q.from && !q.to) {
-    const { from, to } = yearToFromTo(filters.year)
-    q.from = from
-    q.to = to
-  }
-  return `supplier-orders/get${buildQueryString(q)}`
+  const full = toFullQueryParam(filters.full)
+  if (full) q.full = full
+  return buildQueryString(q)
+}
+
+/**
+ * Строит endpoint supplier-orders/get с query-параметрами.
+ */
+export function buildSordersEndpoint(filters: SordersFilters): string {
+  return `supplier-orders/get${buildSordersQuery(filters)}`
 }
 
 /**
@@ -106,6 +135,7 @@ export async function getOneCCredentials(userMetadata: Record<string, unknown>):
 
 /**
  * Получение списка заказов поставщикам с фильтрацией.
+ * Сначала запрос к supplier-orders/get (bsl); при 404 — fallback на sorders/get (старый путь в 1С).
  */
 export async function getSupplierOrders(userMetadata: Record<string, unknown>, filters?: SordersFilters) {
   const credentials = await getOneCCredentials(userMetadata)
@@ -113,23 +143,26 @@ export async function getSupplierOrders(userMetadata: Record<string, unknown>, f
 
   const client = createOneCClient(credentials)
   const f = filters ?? {}
-  const endpoint = buildSordersEndpoint(f)
-  const raw = await client.get<unknown>(endpoint)
-  const { data } = parseDataResponse(raw)
-  return data
+  const query = buildSordersQuery(f)
+
+  return getWith404Fallback(
+    client,
+    [`supplier-orders/get${query}`, `sorders/get${query}`],
+    (raw) => parseDataResponse(raw)
+  )
 }
 
 /**
  * Параметры фильтрации спецификаций.
- * API 1С: specifications/get (параметры: code, name, material, ngroup, year, month, full).
+ * API 1С: specifications/get (code, name, material, ngroup, from, to, full). Параметр year не используется — только from/to в формате dd.MM.yyyy.
  */
 export interface SpecificationsFilters {
   name?: string
   code?: string
   material?: string
   ngroup?: string
-  year?: string
-  month?: string
+  from?: string   // dd.MM.yyyy
+  to?: string    // dd.MM.yyyy
   full?: boolean
 }
 
@@ -140,9 +173,9 @@ export function buildSpecificationsEndpoint(filters: SpecificationsFilters): str
   if (filters.name?.trim()) q.name = filters.name.trim()
   if (filters.material?.trim()) q.material = filters.material.trim()
   if (filters.ngroup?.trim()) q.ngroup = filters.ngroup.trim()
-  if (filters.year?.trim()) q.year = filters.year.trim()
-  if (filters.month?.trim()) q.month = filters.month.trim()
-  if (filters.full) q.full = "1"
+  if (filters.from?.trim()) q.from = filters.from.trim()
+  if (filters.to?.trim()) q.to = filters.to.trim()
+  if (filters.full) q.full = toFullQueryParam(filters.full) ?? "true"
   return `specifications/get${buildQueryString(q)}`
 }
 
@@ -158,10 +191,7 @@ export async function getSpecifications(
 
   const client = createOneCClient(credentials)
   const f = filters ?? {}
-  const endpoint = buildSpecificationsEndpoint(f)
-  const raw = await client.get<unknown>(endpoint)
-  const { data } = parseDataResponse(raw)
-  return data
+  return getWith404Fallback(client, [buildSpecificationsEndpoint(f)], (raw) => parseDataResponse(raw))
 }
 
 /**
@@ -185,7 +215,7 @@ export function buildWarehouseBalancesEndpoint(filters: WarehouseBalancesFilters
   if (filters.name?.trim()) q.name = filters.name.trim()
   if (filters.warehouse?.trim()) q.warehouse = filters.warehouse.trim()
   if (filters.date?.trim()) q.date = filters.date.trim()
-  if (filters.full) q.full = "1"
+  if (filters.full) q.full = toFullQueryParam(filters.full) ?? "true"
   return `balances/get${buildQueryString(q)}`
 }
 
@@ -201,10 +231,7 @@ export async function getWarehouseBalances(
 
   const client = createOneCClient(credentials)
   const f = filters ?? {}
-  const endpoint = buildWarehouseBalancesEndpoint(f)
-  const raw = await client.get<unknown>(endpoint)
-  const { data } = parseDataResponse(raw)
-  return data
+  return getWith404Fallback(client, [buildWarehouseBalancesEndpoint(f)], (raw) => parseDataResponse(raw))
 }
 
 /**
@@ -227,9 +254,7 @@ export async function getMaterials(
   if (filters?.supplier?.trim()) q.supplier = filters.supplier.trim()
   if (filters?.service != null) q.service = String(filters.service)
   const endpoint = `materials/get${buildQueryString(q)}`
-  const raw = await client.get<unknown>(endpoint)
-  const { data } = parseDataResponse(raw)
-  return data
+  return getWith404Fallback(client, [endpoint], (raw) => parseDataResponse(raw))
 }
 
 /**
@@ -247,9 +272,7 @@ export async function getWarehouses(
   if (filters?.name?.trim()) q.name = filters.name.trim()
   if (filters?.group?.trim()) q.group = filters.group.trim()
   const endpoint = `warehouses/get${buildQueryString(q)}`
-  const raw = await client.get<unknown>(endpoint)
-  const { data } = parseDataResponse(raw)
-  return data
+  return getWith404Fallback(client, [endpoint], (raw) => parseDataResponse(raw))
 }
 
 /**
@@ -268,7 +291,7 @@ export function buildSuppliersEndpoint(filters: SuppliersFilters): string {
   const q: Record<string, string | undefined> = {}
   if (filters.name?.trim()) q.name = filters.name.trim()
   if (filters.inn?.trim()) q.inn = filters.inn.trim()
-  if (filters.full) q.full = "1"
+  if (filters.full) q.full = toFullQueryParam(filters.full) ?? "true"
   return `suppliers/get${buildQueryString(q)}`
 }
 
@@ -280,19 +303,16 @@ export async function getSuppliers(userMetadata: Record<string, unknown>, filter
   if (!credentials) throw new Error("1С не настроена")
   const client = createOneCClient(credentials)
   const endpoint = buildSuppliersEndpoint(filters ?? {})
-  const raw = await client.get<unknown>(endpoint)
-  const { data } = parseDataResponse(raw)
-  return data
+  return getWith404Fallback(client, [endpoint], (raw) => parseDataResponse(raw))
 }
 
 /**
  * Параметры фильтрации платежей.
- * API 1С: payments/get (from, to, code, date, responsible, recipient, contractor, cash, comment, status, summ, approved, full).
+ * API 1С: payments/get (from, to, code, date, ...). Параметр year не используется — только from/to в формате dd.MM.yyyy.
  */
 export interface PaymentsFilters {
   code?: string
   contractor?: string
-  year?: string
   org?: string
   responsible?: string
   recipient?: string
@@ -302,8 +322,8 @@ export interface PaymentsFilters {
   summ?: number
   approved?: boolean
   full?: string
-  from?: string
-  to?: string
+  from?: string   // dd.MM.yyyy
+  to?: string     // dd.MM.yyyy
   date?: string
 }
 
@@ -314,24 +334,33 @@ export function buildPaymentsEndpoint(filters: PaymentsFilters): string {
   const q: Record<string, string | number | undefined> = {}
   if (filters.from?.trim()) q.from = filters.from.trim()
   if (filters.to?.trim()) q.to = filters.to.trim()
-  if (filters.year?.trim() && !q.from && !q.to) {
-    const y = filters.year.trim().slice(-2)
-    const fullYear = y.length === 2 ? `20${y}` : filters.year
-    q.from = `01.01.${fullYear}`
-    q.to = `31.12.${fullYear}`
-  }
   if (filters.code?.trim()) q.code = filters.code.trim()
   if (filters.date?.trim()) q.date = filters.date.trim()
   if (filters.responsible?.trim()) q.responsible = filters.responsible.trim()
   if (filters.recipient?.trim()) q.recipient = filters.recipient.trim()
   if (filters.contractor?.trim()) q.contractor = filters.contractor.trim()
+  if (filters.org?.trim()) q.org = filters.org.trim()
   if (filters.cash?.trim()) q.cash = filters.cash.trim()
   if (filters.comment?.trim()) q.comment = filters.comment.trim()
   if (filters.status?.trim()) q.status = filters.status.trim()
   if (filters.summ != null) q.summ = filters.summ
   if (filters.approved != null) q.approved = toApiBool(filters.approved)
-  if (filters.full === "1") q.full = "1"
+  // full — query-параметр "true" для получения файлов из хранилища доп. информации
+  const full = toFullQueryParam(filters.full)
+  if (full) q.full = full
   return `payments/get${buildQueryString(q)}`
+}
+
+/**
+ * Нормализация элемента платежа из 1С: 1С отдаёт Касса (счёт/касса), фронт ожидает Счёт и Организация.
+ * Подставляем Счёт из Касса при отсутствии Счёт; Организация приходит из 1С (заявка на расходование средств).
+ */
+function normalizePayment<T extends Record<string, unknown>>(row: T): T {
+  const r = { ...row }
+  if ((r.Счёт === undefined || r.Счёт === null || String(r.Счёт).trim() === "") && r.Касса !== undefined && r.Касса !== null) {
+    (r as Record<string, unknown>).Счёт = r.Касса
+  }
+  return r as T
 }
 
 /**
@@ -343,19 +372,20 @@ export async function getPayments(userMetadata: Record<string, unknown>, filters
 
   const client = createOneCClient(credentials)
   const f = filters ?? {}
-  const endpoint = buildPaymentsEndpoint(f)
-  const raw = await client.get<unknown>(endpoint)
-  const { data } = parseDataResponse(raw)
-  return data
+  const data = await getWith404Fallback<Record<string, unknown>>(
+    client,
+    [buildPaymentsEndpoint(f)],
+    (raw) => parseDataResponse<Record<string, unknown>>(raw)
+  )
+  return data.map(normalizePayment)
 }
 
 /**
  * Параметры фильтрации поступлений.
- * API 1С: receipts/get (from, to, code, date, contractor, org, warehouse, responsible, summ, approved, full).
+ * API 1С: receipts/get (from, to, code, date, ...). Параметр year не используется — только from/to в формате dd.MM.yyyy.
  */
 export interface ReceiptsFilters {
   code?: string
-  year?: string
   contractor?: string
   org?: string
   warehouse?: string
@@ -364,8 +394,8 @@ export interface ReceiptsFilters {
   summ?: number
   approved?: boolean
   full?: boolean
-  from?: string
-  to?: string
+  from?: string   // dd.MM.yyyy
+  to?: string     // dd.MM.yyyy
   date?: string
 }
 
@@ -385,13 +415,7 @@ export function buildReceiptsEndpoint(filters: ReceiptsFilters): string {
   if (filters.material?.trim()) q.material = filters.material.trim()
   if (filters.summ != null) q.summ = filters.summ
   if (filters.approved != null) q.approved = toApiBool(filters.approved)
-  if (filters.full) q.full = "1"
-  if (filters.year?.trim() && !q.from && !q.to) {
-    const y = filters.year.trim().slice(-2)
-    const fullYear = y.length === 2 ? `20${y}` : filters.year
-    q.from = `01.01.${fullYear}`
-    q.to = `31.12.${fullYear}`
-  }
+  if (filters.full) q.full = toFullQueryParam(filters.full) ?? "true"
   return `receipts/get${buildQueryString(q)}`
 }
 
@@ -403,10 +427,7 @@ export async function getReceipts(userMetadata: Record<string, unknown>, filters
   if (!credentials) throw new Error("1С не настроена")
   const client = createOneCClient(credentials)
   const f = filters ?? {}
-  const endpoint = buildReceiptsEndpoint(f)
-  const raw = await client.get<unknown>(endpoint)
-  const { data } = parseDataResponse(raw)
-  return data
+  return getWith404Fallback(client, [buildReceiptsEndpoint(f)], (raw) => parseDataResponse(raw))
 }
 
 /**
@@ -438,7 +459,7 @@ function buildDemandsEndpoint(filters: DemandsFilters): string {
   if (filters.to?.trim()) q.to = filters.to.trim()
   if (filters.warehouse?.trim()) q.warehouse = filters.warehouse.trim()
   if (filters.responsible?.trim()) q.responsible = filters.responsible.trim()
-  if (filters.full) q.full = "1"
+  if (filters.full) q.full = toFullQueryParam(filters.full) ?? "true"
   return `demands/get${buildQueryString(q)}`
 }
 
@@ -449,10 +470,11 @@ export async function getDemandsList(
   const credentials = await getOneCCredentials(userMetadata)
   if (!credentials) throw new Error("1С не настроена")
   const client = createOneCClient(credentials)
-  const endpoint = buildDemandsEndpoint(filters ?? {})
-  const raw = await client.get<unknown>(endpoint)
-  const { data } = parseDataResponse<DemandItem>(raw)
-  return data
+  return getWith404Fallback<DemandItem>(
+    client,
+    [buildDemandsEndpoint(filters ?? {})],
+    (raw) => parseDataResponse<DemandItem>(raw)
+  )
 }
 
 export async function getDemandByCode(
@@ -520,7 +542,7 @@ function buildTransfersEndpoint(filters: TransfersFilters): string {
   if (filters.responsible?.trim()) q.responsible = filters.responsible.trim()
   if (filters.sender?.trim()) q.sender = filters.sender.trim()
   if (filters.receiver?.trim()) q.receiver = filters.receiver.trim()
-  if (filters.full) q.full = "1"
+  if (filters.full) q.full = toFullQueryParam(filters.full) ?? "true"
   return `transfers/get${buildQueryString(q)}`
 }
 
@@ -531,10 +553,11 @@ export async function getTransfersList(
   const credentials = await getOneCCredentials(userMetadata)
   if (!credentials) throw new Error("1С не настроена")
   const client = createOneCClient(credentials)
-  const endpoint = buildTransfersEndpoint(filters ?? {})
-  const raw = await client.get<unknown>(endpoint)
-  const { data } = parseDataResponse<TransferItem>(raw)
-  return data
+  return getWith404Fallback<TransferItem>(
+    client,
+    [buildTransfersEndpoint(filters ?? {})],
+    (raw) => parseDataResponse<TransferItem>(raw)
+  )
 }
 
 export async function getTransferByCodeFull(
@@ -546,7 +569,7 @@ export async function getTransferByCodeFull(
   if (!credentials) throw new Error("1С не настроена")
   const client = createOneCClient(credentials)
   const enc = code.trim().replaceAll("+", "_plus_").replaceAll("-", "_dash_")
-  const q: Record<string, string> = { code: enc, full: "1" }
+  const q: Record<string, string> = { code: enc, full: "true" }
   if (year?.trim()) {
     const y = year.trim().slice(-2)
     const fullYear = y.length === 2 ? `20${y}` : year

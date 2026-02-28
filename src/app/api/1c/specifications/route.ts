@@ -7,8 +7,8 @@ const CACHE_TTL_SEC = 5 * 60 // 5 минут
 
 /**
  * GET /api/1c/specifications
- * Список спецификаций из 1С. Кэш в Redis по ключу пользователя и фильтрам.
- * Query: name, code, material, year, month, full
+ * Список спецификаций из 1С. Кэш в Redis.
+ * Query: name, code, material, from, to (dd.MM.yyyy), full. Обратная совместимость: year, month → конвертируем в from/to.
  */
 export async function GET(request: NextRequest) {
   try {
@@ -36,6 +36,8 @@ export async function GET(request: NextRequest) {
     const name = searchParams.get("name")
     const code = searchParams.get("code")
     const material = searchParams.get("material")
+    const from = searchParams.get("from")
+    const to = searchParams.get("to")
     const year = searchParams.get("year")
     const month = searchParams.get("month")
     const full = searchParams.get("full")
@@ -43,9 +45,22 @@ export async function GET(request: NextRequest) {
     if (name != null) filters.name = name
     if (code != null) filters.code = code
     if (material != null) filters.material = material
-    if (year != null) filters.year = year
-    if (month != null) filters.month = month
-    if (full === "1" || full === "true") filters.full = true
+    if (from) filters.from = from
+    if (to) filters.to = to
+    if (year && !filters.from && !filters.to) {
+      const y = year.trim().slice(-2)
+      const fullYear = y.length === 2 ? `20${y}` : year
+      filters.from = month
+        ? `01.${String(month).padStart(2, "0")}.${fullYear}`
+        : `01.01.${fullYear}`
+      if (month) {
+        const lastDay = new Date(Number(fullYear), Number(month), 0)
+        filters.to = `${String(lastDay.getDate()).padStart(2, "0")}.${String(lastDay.getMonth() + 1).padStart(2, "0")}.${fullYear}`
+      } else {
+        filters.to = `31.12.${fullYear}`
+      }
+    }
+    if (full === "1" || full === "true" || full === "yes" || (full && full.toLowerCase() === "full")) filters.full = true
 
     const cacheKey = buildCacheKey("1c:specifications", user.id, filters as Record<string, string>)
     const cached = await cacheGet<{ data: unknown; filters: SpecificationsFilters }>(cacheKey)

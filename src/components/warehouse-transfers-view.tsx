@@ -1053,7 +1053,7 @@ export function WarehouseTransfersView() {
                             const [, , yearPart] = datePart.split(".")
                             const year = yearPart ? String(yearPart).slice(-2) : ""
                             if (year) params.set("year", year)
-                            params.set("full", "1")
+                            params.set("full", "true")
                             fetch(`/api/1c/warehouse/transfers?${params}`)
                               .then((res) =>
                                 res.json().then((body: { data?: TransferFull[]; error?: string }) => ({ ok: res.ok, body }))
