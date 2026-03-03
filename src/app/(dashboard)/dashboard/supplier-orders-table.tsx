@@ -1352,7 +1352,8 @@ export function SupplierOrdersTable() {
                 {/* Вложения: при full=true 1С возвращает поле Вложения с { ИмяФайла, Данные (base64) } */}
                 {(() => {
                   const raw = orderDetails.Вложения ?? orderDetails.ДопИнформация ?? []
-                  const attachments = raw.filter(
+                  const list = Array.isArray(raw) ? raw : (raw && typeof raw === "object" ? [raw] : [])
+                  const attachments = list.filter(
                     (a: SupplierOrderAttachment) =>
                       !!a.Данные || !!a.ФайлBase64 || (a.ЕстьВложение && !!a.ИдентификаторХранилища) || !!a.ИмяФайла
                   ) as SupplierOrderAttachment[]
