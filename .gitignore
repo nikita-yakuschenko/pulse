@@ -22,10 +22,13 @@ yarn-error.log*
 # Env
 .env
 .env*.local
+.env.production
 
 # IDE
 .idea
 .vscode
+.claude
+CLAUDE.md
 *.swp
 *.swo
 
