@@ -11,7 +11,8 @@
       "Bash(__NEW_LINE_d89ab3e18bb2f8fc__ python3 -c \":*)",
       "Bash(python3 -c \":*)",
       "Skill(update-config)",
-      "Skill(update-config:*)"
+      "Skill(update-config:*)",
+      "Bash(git commit:*)"
     ]
   }
 }
